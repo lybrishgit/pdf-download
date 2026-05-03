@@ -26,7 +26,8 @@ from typing import Dict, List, Optional
 from PyPDF2 import PdfReader
 from PyPDF2.errors import PdfReadError
 
-from pdf_download.naming import build_pdf_filename
+from pdf_download.lookup import LookupResult, lookup_doi
+from pdf_download.naming import build_pdf_filename, iso_to_abbrev
 
 logger = logging.getLogger(__name__)
 
@@ -163,6 +164,26 @@ def extract_doi(pdf: Path) -> tuple[Optional[str], Optional[str]]:
 
 # ---------- 主流程 ----------
 
+def _meta_from_online(online: LookupResult) -> ArticleMeta:
+    """把 PubMed 線上查回來的 LookupResult 轉成 ArticleMeta。
+
+    journal_abbrev 用 naming.iso_to_abbrev() 解析（先查 registry，
+    再查 EXTENDED_ABBREV_MAP，最後 slugify）。
+    """
+    return ArticleMeta(
+        doi=online.doi,
+        pmid=online.pmid,
+        title=online.title,
+        authors=online.authors,
+        article_type=online.article_type,
+        pages=online.pages,
+        is_open_access=online.is_open_access,
+        journal_abbrev=iso_to_abbrev(online.journal_iso),
+        publication_date=online.publication_date,
+        journal_slug="",  # 線上查的沒有 slug，留空
+    )
+
+
 def build_doi_index(inbox_root: Path, max_recent_dirs: int = 8) -> Dict[str, ArticleMeta]:
     """掃 inbox_root 底下所有日期資料夾的 .json sidecar，建 DOI → ArticleMeta 索引。
 
@@ -220,18 +241,24 @@ def organize_pdfs(
     kb_raw_dir: Path,
     naming_config: dict,
     dry_run: bool = False,
+    online_lookup: bool = True,
 ) -> List[OrganizeResult]:
-    """把 inbox_root/_pdfs/ 的 PDF 處理完，回傳結果清單。"""
+    """把 inbox_root/_pdfs/ 的 PDF 處理完，回傳結果清單。
+
+    Args:
+        online_lookup: 當 inbox cache 找不到 DOI 時，是否打 PubMed 線上查 metadata。
+                       關掉的話，找不到的 PDF 一律留在 _pdfs/。
+    """
     pdfs_dir = inbox_root / "_pdfs"
     if not pdfs_dir.exists():
         raise RuntimeError(f"_pdfs/ 不存在: {pdfs_dir}")
 
     # 1) 建索引
     doi_index = build_doi_index(inbox_root)
-    if not doi_index:
+    if not doi_index and not online_lookup:
         raise RuntimeError(
-            "DOI 索引是空的 — inbox 沒有任何 .json sidecar。"
-            "請先跑 fetch --force 重新產生 sidecar。"
+            "DOI 索引是空的且 online_lookup 關閉。"
+            "請先跑 fetch --force 重新產生 sidecar，或拿掉 --no-online-lookup。"
         )
 
     # 2) 列出 PDF
@@ -266,8 +293,19 @@ def organize_pdfs(
 
         # 對索引
         meta = doi_index.get(doi.lower())
+        if not meta and online_lookup:
+            # Fallback：打 PubMed 線上查
+            logger.info(f"  cache miss，線上查 PubMed: {doi}")
+            online_meta = lookup_doi(doi)
+            if online_meta:
+                meta = _meta_from_online(online_meta)
+                logger.info(f"  ✓ PubMed 找到 → {meta.journal_abbrev} ({online_meta.journal_iso})")
+
         if not meta:
-            result.reason = f"DOI 不在 inbox 索引（可能是非 11 本期刊內，或還沒被 fetch 過）"
+            if online_lookup:
+                result.reason = "DOI 不在 inbox 索引，PubMed 也查不到"
+            else:
+                result.reason = "DOI 不在 inbox 索引（線上查 disabled）"
             results.append(result)
             continue
 

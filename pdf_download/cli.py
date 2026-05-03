@@ -139,6 +139,7 @@ def cmd_organize(args: argparse.Namespace) -> int:
             kb_raw_dir=kb_raw_dir,
             naming_config=naming_config,
             dry_run=args.dry_run,
+            online_lookup=not args.no_online_lookup,
         )
     except RuntimeError as e:
         sys.exit(f"❌ {e}")
@@ -205,6 +206,8 @@ def main(argv: list[str] | None = None) -> int:
     p_org = sub.add_parser("organize", help="掃 _pdfs/，改名後搬到 KB 的 00-Raw/")
     p_org.add_argument("--dry-run", action="store_true",
                        help="只顯示會做什麼，不實際搬檔")
+    p_org.add_argument("--no-online-lookup", action="store_true",
+                       help="關閉 PubMed 線上查 metadata（cache 找不到就放棄）")
     p_org.set_defaults(func=cmd_organize)
 
     p_list = sub.add_parser("list-journals", help="列出目前支援的期刊")

@@ -1,26 +1,28 @@
 #!/bin/bash
-# 移除 launchd 排程
+# 移除兩個 launchd 排程
 #
 # 用法：bash scripts/uninstall_schedule.sh
 
 set -euo pipefail
 
-PLIST_DST="$HOME/Library/LaunchAgents/com.lybrish.pdf-download.plist"
+LAUNCHAGENTS="$HOME/Library/LaunchAgents"
 
-echo "🗑  移除 pdf-download 排程..."
+remove_one() {
+  local label=$1
+  local plist_dst="$LAUNCHAGENTS/${label}.plist"
 
-# bootout 把 service 從 launchd 卸下
-launchctl bootout "gui/$(id -u)/com.lybrish.pdf-download" 2>/dev/null || \
-  echo "(原本就沒在跑，沒關係)"
+  echo "🗑  移除 $label..."
+  launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || \
+    echo "   (原本就沒在跑)"
+  if [ -f "$plist_dst" ]; then
+    rm -f "$plist_dst"
+    echo "   ✅ 已刪除 $plist_dst"
+  fi
+}
 
-# 刪掉 plist 檔
-if [ -f "$PLIST_DST" ]; then
-  rm -f "$PLIST_DST"
-  echo "✅ 已刪除 $PLIST_DST"
-else
-  echo "(plist 檔已不存在)"
-fi
+remove_one "com.lybrish.pdf-download"
+remove_one "com.lybrish.pdf-organize"
 
 echo ""
-echo "排程已移除。手動跑 fetch 不受影響。"
-echo "想重新安裝就跑 bash scripts/install_schedule.sh"
+echo "排程都移除了。手動指令跟 PDF-Organize.command 不受影響。"
+echo "想重新裝就跑 bash scripts/install_schedule.sh"

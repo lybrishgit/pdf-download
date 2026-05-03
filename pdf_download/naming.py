@@ -12,6 +12,83 @@ from __future__ import annotations
 import re
 from typing import Iterable
 
+# PubMed ISO Abbreviation → 顯示用縮寫（沿用 med-literature-organizer skill 的命名習慣）
+# 11 本主期刊在 registry.py 各自的 abbrev 已涵蓋；這裡只放次專科常見的。
+# key 用小寫比對。
+EXTENDED_ABBREV_MAP = {
+    "lancet respir med": "LancetRespir",
+    "lancet oncol": "LancetOncol",
+    "lancet infect dis": "LancetID",
+    "lancet glob health": "LancetGlobalHealth",
+    "lancet diabetes endocrinol": "LancetDiabEndo",
+    "jama intern med": "JAMAInternMed",
+    "jama netw open": "JAMANetworkOpen",
+    "jama oncol": "JAMAOncol",
+    "jama cardiol": "JAMACardiol",
+    "jama neurol": "JAMANeurol",
+    "jama surg": "JAMASurg",
+    "jama pediatr": "JAMAPediatr",
+    "bmj open": "BMJOpen",
+    "bmj open respir res": "BMJOpenRespir",
+    "ann am thorac soc": "AnnATS",
+    "ats sch": "ATSScholar",
+    "crit care": "CritCare",
+    "crit care explor": "CritCareExplor",
+    "crit care clin": "CritCareClin",
+    "j crit care": "JCritCare",
+    "respir care": "RespirCare",
+    "respir med": "RespirMed",
+    "j thorac oncol": "JThoracOncol",
+    "j clin oncol": "JCO",
+    "clin chest med": "ClinChestMed",
+    "clin infect dis": "CID",
+    "antimicrob agents chemother": "AAC",
+    "antimicrob resist infect control": "AntimicrobResistInfectControl",
+    "j microbiol immunol infect": "JMII",
+    "eur j intern med": "EurJInternMed",
+    "radiology": "Radiology",
+    "radiographics": "RadioGraphics",
+    "ajr am j roentgenol": "AJR",
+    "korean j radiol": "KoreanJRadiol",
+    "cochrane database syst rev": "Cochrane",
+    "plos one": "PLoSOne",
+    "front public health": "FrontPublicHealth",
+    "nat med": "NatMed",
+    "nat aging": "NatureAging",
+    "nat rev neurol": "NatRevNeurol",
+    "n engl j med evid": "NEJMEvid",
+    "medicine (baltimore)": "Medicine",
+    "chron respir dis": "ChronRespirDis",
+    "expert rev clin pharmacol": "ExpertRevClinPharmacol",
+}
+
+
+def iso_to_abbrev(iso_abbrev: str) -> str:
+    """PubMed ISO abbrev → 顯示用縮寫。
+
+    順序：
+      1. 先查 11 本期刊 registry（精確比對 ISO abbrev）
+      2. 再查 EXTENDED_ABBREV_MAP（次專科常見）
+      3. fallback：去掉空格與點號（"N Engl J Med" → "NEnglJMed"）
+
+    放這裡而不是 registry.py 是為了避免 circular import。
+    """
+    # 1. 主期刊 registry
+    try:
+        from pdf_download.journals.registry import JOURNALS
+        for cfg in JOURNALS.values():
+            if cfg.iso_abbrev.lower() == iso_abbrev.lower():
+                return cfg.abbrev
+    except ImportError:
+        pass
+
+    # 2. Extended map
+    if iso_abbrev.lower() in EXTENDED_ABBREV_MAP:
+        return EXTENDED_ABBREV_MAP[iso_abbrev.lower()]
+
+    # 3. Slugify: 去掉空格與點號（保留大小寫）
+    return re.sub(r"[.\s]+", "", iso_abbrev) or "Unknown"
+
 DEFAULT_STOPWORDS = {
     "a", "an", "the", "of", "in", "on", "at", "to", "for", "with", "by",
     "from", "and", "or", "but", "is", "are", "was", "were", "be", "been",
