@@ -16,7 +16,7 @@ if [ "$(uname -m)" = "x86_64" ] && [ -x /usr/bin/arch ]; then
 fi
 
 # 切到專案目錄（用絕對路徑，避免被雙擊時 cwd 不對）
-PROJECT_DIR="/Users/lybrish-mini/lybrish_claude/sandbox/pdf-download"
+PROJECT_DIR="/Users/lybrish-mini/lybrish_claude/projects/pdf-download"
 cd "$PROJECT_DIR" || { echo "找不到 $PROJECT_DIR"; sleep 3; exit 1; }
 
 source venv/bin/activate

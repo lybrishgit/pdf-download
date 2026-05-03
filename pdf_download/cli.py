@@ -39,6 +39,22 @@ def expand(p: str) -> Path:
     return Path(p).expanduser()
 
 
+def _macos_notify(title: str, message: str) -> None:
+    """送 macOS 原生通知（取代 bash wrapper 的 osascript 呼叫，
+    避免 bash 對中文標點的變數展開 bug）。"""
+    import subprocess
+    safe_title = title.replace('"', '\\"')
+    safe_msg = message.replace('"', '\\"')
+    try:
+        subprocess.run(
+            ["osascript", "-e",
+             f'display notification "{safe_msg}" with title "{safe_title}"'],
+            capture_output=True, timeout=5,
+        )
+    except (subprocess.SubprocessError, FileNotFoundError):
+        pass
+
+
 def build_analyzer(config: dict) -> AbstractAnalyzer | None:
     """如果 config 啟用 AI 評析，建立 analyzer；否則回 None。"""
     ai = config.get("ai_analysis", {})
@@ -115,9 +131,47 @@ def cmd_fetch(args: argparse.Namespace) -> int:
         print("\n❌ 失敗：")
         for f in summary["failed"]:
             print(f"  • {f['journal']:12s} {f['reason']}")
-        return 1
 
-    return 0
+    # --notify：給 launchd 排程用，跑完發 macOS 通知
+    if args.notify:
+        n_ok = len(summary["fetched"])
+        n_failed = len(summary["failed"])
+        n_skipped = len(summary["skipped"])
+        total_articles = sum(f["article_count"] for f in summary["fetched"])
+        # 計算必讀篇數（從 .md 檔抓）
+        try:
+            must_read = _count_must_read(summary["out_dir"])
+        except Exception:
+            must_read = None
+
+        if n_ok == 0 and n_failed == 0:
+            if not args.silent_when_empty:
+                _macos_notify("pdf-download ✓ 無新內容",
+                             f"{n_skipped} 本期刊已抓過")
+        elif n_failed == 0:
+            msg = f"{total_articles} 篇文章"
+            if must_read is not None:
+                msg += f"·{must_read} 必讀 ⭐⭐⭐⭐+"
+            _macos_notify("pdf-download ✓ 本週摘要已就緒", msg)
+        else:
+            _macos_notify("pdf-download ⚠️ 部分失敗",
+                         f"成功 {n_ok} · 失敗 {n_failed}")
+
+    return 1 if summary["failed"] else 0
+
+
+def _count_must_read(out_dir: Path) -> int:
+    """從輸出 .md 統計必讀篇數。"""
+    count = 0
+    for md in out_dir.glob("*.md"):
+        if md.name == "INDEX.md":
+            continue
+        try:
+            text = md.read_text(encoding="utf-8")
+            count += text.count("必讀")
+        except OSError:
+            pass
+    return count
 
 
 def cmd_organize(args: argparse.Namespace) -> int:
@@ -174,6 +228,19 @@ def cmd_organize(args: argparse.Namespace) -> int:
     log_path = write_log(results, inbox_root, kb_raw_dir, args.dry_run)
     print(f"📝 詳細紀錄: {log_path}")
 
+    # --notify：給 launchd 排程用，跑完發 macOS 通知
+    if args.notify:
+        if not results:
+            if not args.silent_when_empty:
+                _macos_notify("PDF Organize ✓", "_pdfs/ 是空的，沒東西要處理")
+        elif not unmatched:
+            _macos_notify("PDF Organize ✓ 完成", f"{len(matched)} 篇全部進 KB 的 00-Raw/")
+        elif not matched:
+            _macos_notify("PDF Organize ⚠️", f"{len(unmatched)} 篇都沒對到 abstracts")
+        else:
+            _macos_notify("PDF Organize ✓ 部分完成",
+                         f"{len(matched)} 篇進 KB · {len(unmatched)} 篇留在 _pdfs/")
+
     return 0 if not unmatched else (0 if matched else 1)
 
 
@@ -201,6 +268,10 @@ def main(argv: list[str] | None = None) -> int:
                          help="跳過 AI 評析，只產 abstract")
     p_fetch.add_argument("--reanalyze", action="store_true",
                          help="強制重跑 AI 評析，忽略 cache")
+    p_fetch.add_argument("--notify", action="store_true",
+                         help="跑完發 macOS 通知（給 launchd 排程用）")
+    p_fetch.add_argument("--silent-when-empty", action="store_true",
+                         help="搭配 --notify：沒新內容時不通知")
     p_fetch.set_defaults(func=cmd_fetch)
 
     p_org = sub.add_parser("organize", help="掃 _pdfs/，改名後搬到 KB 的 00-Raw/")
@@ -208,6 +279,10 @@ def main(argv: list[str] | None = None) -> int:
                        help="只顯示會做什麼，不實際搬檔")
     p_org.add_argument("--no-online-lookup", action="store_true",
                        help="關閉 PubMed 線上查 metadata（cache 找不到就放棄）")
+    p_org.add_argument("--notify", action="store_true",
+                       help="跑完發 macOS 通知（給 launchd 排程用）")
+    p_org.add_argument("--silent-when-empty", action="store_true",
+                       help="搭配 --notify：_pdfs/ 是空時不通知（避免每日跑很煩）")
     p_org.set_defaults(func=cmd_organize)
 
     p_list = sub.add_parser("list-journals", help="列出目前支援的期刊")

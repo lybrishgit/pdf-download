@@ -2,19 +2,27 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <!-- 識別碼，反向 DNS 慣例 -->
   <key>Label</key>
   <string>com.lybrish.pdf-download</string>
 
-  <!-- 觸發時要跑的程式 -->
+  <!-- 直接呼叫 venv python，不經過 bash（同 KB-Scripts 模式）。
+       原因：macOS TCC 追蹤 binary identity；bash 是系統共用的，難給單獨 FDA。
+       venv python 是 symlink 到 /Library/.../python3，跟 KB 共用同一個 binary，
+       借用 KB 已給的 FDA 授權。 -->
   <key>ProgramArguments</key>
   <array>
-    <string>/bin/bash</string>
-    <string>/Users/lybrish-mini/lybrish_claude/sandbox/pdf-download/scripts/run_fetch.sh</string>
+    <string>/Users/lybrish-mini/lybrish_claude/projects/pdf-download/venv/bin/python</string>
+    <string>-m</string>
+    <string>pdf_download.cli</string>
+    <string>fetch</string>
+    <string>--notify</string>
+    <string>--silent-when-empty</string>
   </array>
 
+  <key>WorkingDirectory</key>
+  <string>/Users/lybrish-mini/lybrish_claude/projects/pdf-download</string>
+
   <!-- 排程：每週日 16:00 (Asia/Taipei) -->
-  <!-- launchd 的 Weekday: 0=週日, 1=週一, ..., 6=週六 -->
   <key>StartCalendarInterval</key>
   <dict>
     <key>Weekday</key>
@@ -25,17 +33,14 @@
     <integer>0</integer>
   </dict>
 
-  <!-- 載入時不立刻跑（只在排程時間到才跑） -->
   <key>RunAtLoad</key>
   <false/>
 
-  <!-- launchd 的 stdout/stderr -->
   <key>StandardOutPath</key>
-  <string>/Users/lybrish-mini/Library/Logs/pdf-download/launchd-stdout.log</string>
+  <string>/Users/lybrish-mini/Library/Logs/pdf-download/fetch-auto-stdout.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/lybrish-mini/Library/Logs/pdf-download/launchd-stderr.log</string>
+  <string>/Users/lybrish-mini/Library/Logs/pdf-download/fetch-auto-stderr.log</string>
 
-  <!-- 補完 PATH，否則 launchd 預設路徑很短 -->
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
@@ -44,7 +49,6 @@
     <string>/Users/lybrish-mini</string>
   </dict>
 
-  <!-- 過去錯過的時間不要補跑（避免電腦睡很久醒來連跑好幾次） -->
   <key>StartCalendarIntervalAllowsMultipleEvents</key>
   <false/>
 </dict>

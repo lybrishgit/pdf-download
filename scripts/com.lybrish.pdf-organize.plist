@@ -5,13 +5,24 @@
   <key>Label</key>
   <string>com.lybrish.pdf-organize</string>
 
+  <!-- 直接呼叫 venv python，不經過 bash。原因：
+       macOS TCC 追蹤 binary identity；bash 是系統共用的，沒辦法單獨給 FDA。
+       venv python 是專案專屬 binary，可以單獨授權。
+       這跟 KB-Scripts 的 launchd plist 是同個模式。 -->
   <key>ProgramArguments</key>
   <array>
-    <string>/bin/bash</string>
-    <string>/Users/lybrish-mini/lybrish_claude/sandbox/pdf-download/scripts/run_organize.sh</string>
+    <string>/Users/lybrish-mini/lybrish_claude/projects/pdf-download/venv/bin/python</string>
+    <string>-m</string>
+    <string>pdf_download.cli</string>
+    <string>organize</string>
+    <string>--notify</string>
+    <string>--silent-when-empty</string>
   </array>
 
-  <!-- 每天 03:00 跑（接 KB 4:00 排程之前） -->
+  <key>WorkingDirectory</key>
+  <string>/Users/lybrish-mini/lybrish_claude/projects/pdf-download</string>
+
+  <!-- 每天 03:00 跑（接 KB 04:00 排程之前） -->
   <key>StartCalendarInterval</key>
   <dict>
     <key>Hour</key>
@@ -24,9 +35,9 @@
   <false/>
 
   <key>StandardOutPath</key>
-  <string>/Users/lybrish-mini/Library/Logs/pdf-download/launchd-organize-stdout.log</string>
+  <string>/Users/lybrish-mini/Library/Logs/pdf-download/organize-auto-stdout.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/lybrish-mini/Library/Logs/pdf-download/launchd-organize-stderr.log</string>
+  <string>/Users/lybrish-mini/Library/Logs/pdf-download/organize-auto-stderr.log</string>
 
   <key>EnvironmentVariables</key>
   <dict>

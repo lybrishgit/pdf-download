@@ -32,7 +32,7 @@
 ## 安裝
 
 ```bash
-cd ~/lybrish_claude/sandbox/pdf-download
+cd ~/lybrish_claude/projects/pdf-download
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
