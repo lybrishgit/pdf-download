@@ -1,0 +1,40 @@
+---
+journal: {{ issue.journal_abbrev }}
+journal_full: {{ issue.journal_full }}
+volume: {{ issue.volume }}
+issue: {{ issue.issue }}
+publication_date: {{ issue.publication_date }}
+fetched_at: {{ fetched_at }}
+issue_url: {{ issue.issue_url }}
+article_count: {{ issue.articles | length }}
+oa_count: {{ issue.oa_count }}
+---
+
+# {{ issue.journal_abbrev }} — Vol {{ issue.volume }}, Issue {{ issue.issue }}
+
+📅 出刊 {{ issue.publication_date }} · 抓取 {{ fetched_at }} · {{ issue.articles | length }} 篇文章{% if issue.oa_count %} ({{ issue.oa_count }} 篇 OA 🔓){% endif %}
+
+> 在 Obsidian 勾選 ☑ 想要全文的；醫院 PC 請開 `{{ issue.filename_stem }}.html` 直接點 PDF 下載。
+
+---
+{% for article in issue.articles %}
+## {{ loop.index }}. {{ article.title }}{% if article.is_open_access %} 🔓{% endif %}
+{% if article.ai_analysis %}
+> [!{% if article.ai_analysis.action == "必讀" %}danger{% elif article.ai_analysis.action == "瀏覽" %}tip{% else %}note{% endif %}] 🤖 AI 評析 — {{ article.ai_analysis.stars_emoji }} {{ article.ai_analysis.action }}
+> {{ article.ai_analysis.body | replace('\n', '\n> ') }}
+{% endif %}
+
+- [ ] **要全文 PDF**
+
+{% if article.authors %}**Authors**: {{ article.authors }}  {% endif %}
+{% if article.article_type or article.pages %}{% if article.article_type %}**Type**: {{ article.article_type }}{% endif %}{% if article.article_type and article.pages %} · {% endif %}{% if article.pages %}**Pages**: {{ article.pages }}{% endif %}  {% endif %}
+**DOI**: [{{ article.doi }}](https://doi.org/{{ article.doi }})
+**原文**: [{{ article.article_url }}]({{ article.article_url }})
+
+{% for header, body in article.abstract_sections %}
+{% if header %}**{{ header }}.** {% endif %}{{ body }}
+{% endfor %}
+{% if not article.abstract_sections %}_（abstract 抓取失敗，請點 DOI 連結看原文）_
+{% endif %}
+---
+{% endfor %}

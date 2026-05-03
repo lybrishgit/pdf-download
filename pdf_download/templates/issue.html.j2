@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ issue.journal_abbrev }} {{ issue.publication_date }}</title>
+<style>
+  :root {
+    --bg: #fafaf7;
+    --card: #ffffff;
+    --border: #e5e5dc;
+    --text: #1a1a1a;
+    --muted: #666;
+    --accent: #0066cc;
+    --oa: #1a8a3a;
+    --download-bg: #0066cc;
+    --download-hover: #004999;
+    --must-bg: #fde8e8;
+    --must-border: #f5b7b7;
+    --must-text: #8a1a1a;
+    --skim-bg: #fff7d6;
+    --skim-border: #f0d878;
+    --skim-text: #6a4f00;
+    --skip-bg: #f0f0f0;
+    --skip-border: #d0d0d0;
+    --skip-text: #555;
+  }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", "PingFang TC", sans-serif;
+         background: var(--bg); color: var(--text); margin: 0; padding: 0; line-height: 1.65; }
+  .container { max-width: 880px; margin: 0 auto; padding: 24px 20px; }
+  header { background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+           padding: 24px 28px; margin-bottom: 20px; }
+  header h1 { margin: 0 0 8px; font-size: 1.6em; }
+  header .meta { color: var(--muted); font-size: 0.95em; }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+  .toolbar button { padding: 8px 14px; border: 1px solid var(--border); background: white;
+                    border-radius: 6px; cursor: pointer; font-size: 0.9em; }
+  .toolbar button:hover { background: #f0f0e8; }
+  article { background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+            padding: 22px 26px; margin-bottom: 16px; }
+  article h2 { margin: 0 0 14px; font-size: 1.18em; line-height: 1.4; }
+  .num { color: var(--muted); font-weight: normal; margin-right: 6px; }
+  .oa-badge { display: inline-block; background: var(--oa); color: white; padding: 1px 8px;
+              border-radius: 4px; font-size: 0.75em; margin-left: 6px; vertical-align: middle; }
+
+  /* AI 評析 callout */
+  .ai-review { border-left: 4px solid; padding: 12px 16px; border-radius: 6px;
+               margin: 0 0 14px 0; font-size: 0.95em; }
+  .ai-review.must-read { background: var(--must-bg); border-color: var(--must-border); color: var(--must-text); }
+  .ai-review.skim     { background: var(--skim-bg); border-color: var(--skim-border); color: var(--skim-text); }
+  .ai-review.skip     { background: var(--skip-bg); border-color: var(--skip-border); color: var(--skip-text); }
+  .ai-review-header { font-weight: 600; margin-bottom: 6px; display: flex; align-items: center;
+                      gap: 8px; flex-wrap: wrap; }
+  .ai-review-stars { letter-spacing: 1px; }
+  .ai-review-action { padding: 1px 8px; border-radius: 3px; font-size: 0.85em; }
+  .ai-review.must-read .ai-review-action { background: rgba(138,26,26,0.15); }
+  .ai-review.skim .ai-review-action     { background: rgba(106,79,0,0.15); }
+  .ai-review.skip .ai-review-action     { background: rgba(85,85,85,0.15); }
+  .ai-review-body { line-height: 1.6; }
+
+  .pick { margin: 10px 0; }
+  .pick input[type=checkbox] { margin-right: 6px; transform: scale(1.2); }
+  .meta-row { color: var(--muted); font-size: 0.92em; margin: 8px 0; }
+  .meta-row strong { color: var(--text); }
+  .links { margin: 10px 0; }
+  .links a { display: inline-block; margin-right: 12px; color: var(--accent); text-decoration: none; }
+  .links a:hover { text-decoration: underline; }
+  .download-btn { display: inline-block; background: var(--download-bg); color: white !important;
+                  padding: 6px 14px; border-radius: 5px; font-weight: 500; font-size: 0.9em; }
+  .download-btn:hover { background: var(--download-hover); text-decoration: none !important; }
+  .abstract { margin-top: 14px; font-size: 0.96em; }
+  .abstract p { margin: 0 0 8px; }
+  .abstract .header { font-weight: 600; }
+  .no-abstract { color: var(--muted); font-style: italic; }
+  hr { border: 0; border-top: 1px solid var(--border); margin: 0; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 0.92em; user-select: none; }
+  details[open] summary { margin-bottom: 8px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>{{ issue.journal_abbrev }} — Vol {{ issue.volume }}, Issue {{ issue.issue }}</h1>
+    <div class="meta">
+      📅 出刊 {{ issue.publication_date }} · 抓取 {{ fetched_at }} ·
+      {{ issue.articles | length }} 篇文章{% if issue.oa_count %} ({{ issue.oa_count }} 篇 OA){% endif %}
+    </div>
+    <div class="toolbar">
+      <button onclick="filterByAction('必讀')">只看必讀</button>
+      <button onclick="filterByAction('all')">看全部</button>
+      <button onclick="openSelectedPDFs()">開啟勾選的原文</button>
+    </div>
+  </header>
+
+  {% for article in issue.articles %}
+  <article id="art-{{ loop.index }}" data-action="{{ article.ai_analysis.action if article.ai_analysis else '' }}">
+    <h2><span class="num">{{ loop.index }}.</span>{{ article.title }}{% if article.is_open_access %}<span class="oa-badge">Open Access</span>{% endif %}</h2>
+
+    {% if article.ai_analysis %}
+    <div class="ai-review {{ article.ai_analysis.callout_class }}">
+      <div class="ai-review-header">
+        <span>🤖 AI 評析</span>
+        <span class="ai-review-stars">{{ article.ai_analysis.stars_emoji }}</span>
+        <span class="ai-review-action">{{ article.ai_analysis.action }}</span>
+      </div>
+      <div class="ai-review-body">{{ article.ai_analysis.body }}</div>
+    </div>
+    {% endif %}
+
+    <div class="pick">
+      <label><input type="checkbox" class="pick-cb" data-pdf="{{ article.article_url }}"> 要全文 PDF</label>
+    </div>
+
+    {% if article.authors %}<div class="meta-row"><strong>Authors:</strong> {{ article.authors }}</div>{% endif %}
+    <div class="meta-row">
+      {% if article.article_type %}<strong>Type:</strong> {{ article.article_type }}{% endif %}
+      {% if article.article_type and article.pages %} · {% endif %}
+      {% if article.pages %}<strong>Pages:</strong> {{ article.pages }}{% endif %}
+    </div>
+    <div class="meta-row"><strong>DOI:</strong> <a href="https://doi.org/{{ article.doi }}" target="_blank">{{ article.doi }}</a></div>
+
+    <div class="links">
+      <a class="download-btn" href="{{ article.article_url }}" target="_blank">📄 開啟原文（PDF 從文章頁下載）</a>
+    </div>
+
+    <details>
+      <summary>展開 abstract</summary>
+      <div class="abstract">
+      {% if article.abstract_sections %}
+        {% for header, body in article.abstract_sections %}
+          <p>{% if header %}<span class="header">{{ header }}.</span> {% endif %}{{ body }}</p>
+        {% endfor %}
+      {% else %}
+        <p class="no-abstract">（abstract 抓取失敗，請點原文頁查看）</p>
+      {% endif %}
+      </div>
+    </details>
+  </article>
+  {% endfor %}
+</div>
+
+<script>
+  function openSelectedPDFs() {
+    const selected = document.querySelectorAll('.pick-cb:checked');
+    if (selected.length === 0) { alert('請先勾選想要的文章'); return; }
+    if (!confirm(`將開啟 ${selected.length} 個分頁，確定？`)) return;
+    selected.forEach(cb => window.open(cb.dataset.pdf, '_blank'));
+  }
+  function filterByAction(action) {
+    document.querySelectorAll('article').forEach(a => {
+      a.style.display = (action === 'all' || a.dataset.action === action) ? '' : 'none';
+    });
+  }
+</script>
+</body>
+</html>

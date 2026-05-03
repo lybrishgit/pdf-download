@@ -1,0 +1,19 @@
+# Journals Inbox · {{ fetch_date }}
+
+抓取於 {{ fetched_at }} · **{{ issues | length }} 個期刊** · **{{ total_articles }} 篇文章** · **{{ total_oa }} OA 🔓**
+
+| 期刊 | 期數 | 出刊日 | 篇數 | OA | 連結 |
+|--|--|--|--|--|--|
+{% for issue in issues -%}
+| {{ issue.journal_abbrev }} | {% if issue.volume or issue.issue %}{{ issue.volume or '—' }}/{{ issue.issue or '—' }}{% else %}AOP{% endif %} | {{ issue.publication_date }} | {{ issue.articles | length }} | {{ issue.oa_count }} | [[{{ issue.filename_stem }}]] |
+{% endfor %}
+
+{% if failed -%}
+## 失敗紀錄
+{% for f in failed %}
+- **{{ f.journal }}**: {{ f.reason }}
+{%- endfor %}
+{% else -%}
+## 失敗紀錄
+無
+{%- endif %}

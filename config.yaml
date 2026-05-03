@@ -1,0 +1,86 @@
+# pdf-download 主設定
+
+# Inbox 輸出位置（GDrive，跨機器同步）
+# 注意：你的 GDrive 介面語言是繁中，所以資料夾名是「我的雲端硬碟」不是 "My Drive"
+inbox_root: "~/Library/CloudStorage/GoogleDrive-lybrish@gmail.com/我的雲端硬碟/Journals-Inbox"
+
+# KB 系統的 00-Raw 位置（organize 後 PDF 搬去這）
+kb_raw_dir: "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/MyKnowledgeBase/00-Raw"
+
+# State file（記錄各期刊上次抓到哪期）
+state_file: "~/.config/pdf-download/state.json"
+
+# HTTP 抓取設定
+http:
+  timeout: 30
+  user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
+  rate_limit_seconds: 1.5  # 每篇文章之間等待秒數，避免被擋
+
+# PDF 命名規則
+naming:
+  # 標題關鍵字最大字元數（不含年份/期刊前綴）
+  max_title_chars: 35
+  # 移除的 stopwords（小寫比對）
+  stopwords:
+    - a
+    - an
+    - the
+    - of
+    - in
+    - on
+    - at
+    - to
+    - for
+    - with
+    - by
+    - from
+    - and
+    - or
+    - but
+    - is
+    - are
+    - was
+    - were
+    - be
+    - been
+    - being
+    - has
+    - have
+    - had
+    - do
+    - does
+    - did
+    - as
+    - that
+    - this
+    - these
+    - those
+
+# 啟用的期刊（11 本全開；不想抓的註解掉）
+journals_enabled:
+  - nejm
+  - jama
+  - lancet
+  - bmj
+  - annim
+  - chest
+  - ajrccm
+  - icm
+  - ccm
+  - thorax
+  - erj
+
+# PubMed E-utilities 設定
+pubmed:
+  # 加 NCBI API Key 可放寬 rate limit (3→10 req/sec)
+  # 申請: https://www.ncbi.nlm.nih.gov/account/settings/
+  # 設定: 在 .env 寫 NCBI_API_KEY=xxx 或 export 環境變數
+  use_api_key_from_env: true
+
+# AI 評析設定（Claude API 對每篇 abstract 寫評析）
+ai_analysis:
+  enabled: true
+  model: claude-sonnet-4-6              # claude-haiku-4-5-20251001 也可
+  prompt_file: prompts/abstract_review.txt
+  cache_file: ~/.config/pdf-download/ai-cache.json
+  max_tokens: 600                        # 每篇回應上限

@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- 識別碼，反向 DNS 慣例 -->
+  <key>Label</key>
+  <string>com.lybrish.pdf-download</string>
+
+  <!-- 觸發時要跑的程式 -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/lybrish-mini/lybrish_claude/sandbox/pdf-download/scripts/run_fetch.sh</string>
+  </array>
+
+  <!-- 排程：每週日 16:00 (Asia/Taipei) -->
+  <!-- launchd 的 Weekday: 0=週日, 1=週一, ..., 6=週六 -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key>
+    <integer>0</integer>
+    <key>Hour</key>
+    <integer>16</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+
+  <!-- 載入時不立刻跑（只在排程時間到才跑） -->
+  <key>RunAtLoad</key>
+  <false/>
+
+  <!-- launchd 的 stdout/stderr -->
+  <key>StandardOutPath</key>
+  <string>/Users/lybrish-mini/Library/Logs/pdf-download/launchd-stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/lybrish-mini/Library/Logs/pdf-download/launchd-stderr.log</string>
+
+  <!-- 補完 PATH，否則 launchd 預設路徑很短 -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>HOME</key>
+    <string>/Users/lybrish-mini</string>
+  </dict>
+
+  <!-- 過去錯過的時間不要補跑（避免電腦睡很久醒來連跑好幾次） -->
+  <key>StartCalendarIntervalAllowsMultipleEvents</key>
+  <false/>
+</dict>
+</plist>
