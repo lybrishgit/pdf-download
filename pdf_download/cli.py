@@ -22,6 +22,7 @@ from pdf_download.analyzer import AbstractAnalyzer, load_prompt_template
 from pdf_download.fetch import run_fetch
 from pdf_download.journals import JOURNALS, list_journals
 from pdf_download.organize import organize_pdfs, write_log
+from pdf_download.rename import rename_pdfs
 from pdf_download.state import State
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -254,6 +255,73 @@ def cmd_organize(args: argparse.Namespace) -> int:
     return 0 if not unmatched else (0 if matched else 1)
 
 
+def cmd_rename(args: argparse.Namespace) -> int:
+    """原地改名：給任意路徑的 PDF 套用 KB 命名規則（不搬不複製）。"""
+    config = load_config(args.config)
+    naming_config = config.get("naming", {})
+
+    paths = [Path(p).expanduser() for p in args.paths]
+
+    mode_label = "🚀 APPLY — 實際改名" if args.apply else "🧪 DRY-RUN — 預覽（加 --apply 才動）"
+    print(mode_label)
+    print()
+
+    results = rename_pdfs(
+        paths=paths,
+        naming_config=naming_config,
+        apply=args.apply,
+        online_lookup=not args.no_online_lookup,
+    )
+
+    if not results:
+        print("沒有 PDF 可處理（路徑不存在、不是 PDF、或資料夾是空的）")
+        return 0
+
+    matched = [r for r in results if r.matched]
+    unmatched = [r for r in results if not r.matched]
+    will_rename = [r for r in matched if not r.already_correct]
+    already_ok = [r for r in matched if r.already_correct]
+
+    print(
+        f"📊 共 {len(results)} 個 PDF · "
+        f"待改名 {len(will_rename)} · "
+        f"已正確 {len(already_ok)} · "
+        f"略過 {len(unmatched)}"
+    )
+    print()
+
+    if will_rename:
+        verb = "已改名" if args.apply else "建議改名"
+        print(f"{verb}：")
+        for r in will_rename:
+            actual = r.target.name if r.target else "?"
+            tag = " ✓" if (args.apply and r.renamed) else ""
+            print(f"  {r.source.name}{tag}")
+            print(f"  → {actual}")
+            print(f"     DOI: {r.doi} ({r.extract_method})")
+            print()
+
+    if already_ok:
+        print(f"已是正確檔名（不改）：")
+        for r in already_ok:
+            print(f"  ✓ {r.source.name}")
+        print()
+
+    if unmatched:
+        print("略過：")
+        for r in unmatched:
+            print(f"  ⚠️  {r.source.name}")
+            if r.doi:
+                print(f"     DOI: {r.doi}")
+            print(f"     原因: {r.reason}")
+        print()
+
+    if not args.apply and will_rename:
+        print("💡 確認沒問題後，加 --apply 旗標重跑就會實際改名")
+
+    return 0 if not unmatched else (0 if matched else 1)
+
+
 def cmd_list_journals(args: argparse.Namespace) -> int:
     print("目前支援的期刊：")
     for slug, full_name in list_journals():
@@ -294,6 +362,18 @@ def main(argv: list[str] | None = None) -> int:
     p_org.add_argument("--silent-when-empty", action="store_true",
                        help="搭配 --notify：_pdfs/ 是空時不通知（避免每日跑很煩）")
     p_org.set_defaults(func=cmd_organize)
+
+    p_rename = sub.add_parser(
+        "rename",
+        help="原地改名任意路徑的 PDF（用 PubMed metadata，不搬不複製）"
+    )
+    p_rename.add_argument("paths", nargs="+",
+                          help="一個或多個路徑（資料夾或單檔，可混用）")
+    p_rename.add_argument("--apply", action="store_true",
+                          help="實際改名（預設只 dry-run 預覽）")
+    p_rename.add_argument("--no-online-lookup", action="store_true",
+                          help="不打 PubMed 線上查（純 DOI 抽取，多半會失敗）")
+    p_rename.set_defaults(func=cmd_rename)
 
     p_list = sub.add_parser("list-journals", help="列出目前支援的期刊")
     p_list.set_defaults(func=cmd_list_journals)
