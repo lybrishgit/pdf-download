@@ -57,6 +57,10 @@ class OrganizeResult:
     article: Optional[ArticleMeta] = None
     reason: Optional[str] = None  # 失敗原因
     extract_method: Optional[str] = None  # filename / metadata / first_page
+    # 額外副本：成功複製到 extra_copy_dir 的目標路徑；
+    # None = 沒設定 / 主流程沒成功 / 副本步驟失敗（看 extra_copy_note）
+    extra_copy_path: Optional[Path] = None
+    extra_copy_note: Optional[str] = None  # 例：「已存在略過」「複製失敗: ...」
 
 
 # DOI 正則：標準 DOI 格式
@@ -247,12 +251,16 @@ def organize_pdfs(
     naming_config: dict,
     dry_run: bool = False,
     online_lookup: bool = True,
+    extra_copy_dir: Optional[Path] = None,
 ) -> List[OrganizeResult]:
     """把 inbox_root/_pdfs/ 的 PDF 處理完，回傳結果清單。
 
     Args:
         online_lookup: 當 inbox cache 找不到 DOI 時，是否打 PubMed 線上查 metadata。
                        關掉的話，找不到的 PDF 一律留在 _pdfs/。
+        extra_copy_dir: 若給定，每篇成功 organize 的 PDF 會複製一份到這個資料夾。
+                        失敗只記 warning 不影響主流程；目標已存在就跳過。
+                        用途：跨裝置同步待讀清單（如 iCloud Drive 給 iPad / iPhone）。
     """
     pdfs_dir = inbox_root / "_pdfs"
     if not pdfs_dir.exists():
@@ -278,6 +286,12 @@ def organize_pdfs(
     # 3) 逐一處理
     if not dry_run:
         kb_raw_dir.mkdir(parents=True, exist_ok=True)
+        if extra_copy_dir:
+            try:
+                extra_copy_dir.mkdir(parents=True, exist_ok=True)
+            except OSError as e:
+                logger.warning(f"額外副本資料夾建立失敗，本次跳過複製：{extra_copy_dir} ({e})")
+                extra_copy_dir = None
 
     results: List[OrganizeResult] = []
     max_title_chars = naming_config.get("max_title_chars", 35)
@@ -346,6 +360,24 @@ def organize_pdfs(
                 result.reason = f"搬移失敗: {e}"
                 results.append(result)
                 continue
+
+        # 額外副本：搬到 KB 後再從 target 複製過去（避免讀已不存在的 source）
+        if extra_copy_dir:
+            extra_target = extra_copy_dir / new_name
+            if extra_target.exists():
+                result.extra_copy_note = "已存在略過"
+                logger.info(f"  副本已存在，略過：{extra_target}")
+            elif dry_run:
+                result.extra_copy_path = extra_target
+                result.extra_copy_note = "(dry-run)"
+            else:
+                try:
+                    shutil.copy2(str(target), str(extra_target))
+                    result.extra_copy_path = extra_target
+                except OSError as e:
+                    # 副本失敗不影響主流程，只記 warning
+                    result.extra_copy_note = f"複製失敗: {e}"
+                    logger.warning(f"  副本複製失敗 {extra_target}: {e}")
 
         results.append(result)
 
