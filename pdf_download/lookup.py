@@ -56,6 +56,35 @@ def lookup_doi(doi: str, timeout: int = 30, rate_limit: float = 0.34) -> Optiona
     return _efetch_one(pmid, doi, timeout, api_key, rate_limit)
 
 
+def _request_with_retry(url: str, params: dict, timeout: int,
+                        label: str, max_attempts: int = 3) -> Optional[requests.Response]:
+    """打 NCBI E-utilities 加 retry。
+
+    為什麼要 retry：PubMed 偶爾回 5xx 或 socket 抖動（實測過 RBTI/LWW
+    第一次失敗、第二次成功的情況）。沒重試會誤判為「PubMed 也查不到」。
+
+    策略：最多 3 次，指數退避（1 秒、2 秒）。4xx 視為真錯誤不重試。
+    回傳 None 代表全部嘗試都失敗。
+    """
+    for attempt in range(1, max_attempts + 1):
+        try:
+            resp = requests.get(url, params=params, timeout=timeout)
+            # 4xx 是真錯誤（例如參數壞），不重試
+            if 400 <= resp.status_code < 500:
+                logger.warning(f"{label} HTTP {resp.status_code}（4xx 不重試）")
+                return None
+            resp.raise_for_status()
+            return resp
+        except requests.RequestException as e:
+            if attempt < max_attempts:
+                backoff = 2 ** (attempt - 1)  # 1, 2, ...
+                logger.info(f"{label} 第 {attempt}/{max_attempts} 次失敗（{e}），{backoff} 秒後重試")
+                time.sleep(backoff)
+            else:
+                logger.warning(f"{label} 重試 {max_attempts} 次都失敗: {e}")
+    return None
+
+
 def _doi_to_pmid(doi: str, timeout: int, api_key: Optional[str]) -> Optional[str]:
     params = {
         "db": "pubmed",
@@ -66,14 +95,16 @@ def _doi_to_pmid(doi: str, timeout: int, api_key: Optional[str]) -> Optional[str
     if api_key:
         params["api_key"] = api_key
 
+    resp = _request_with_retry(f"{EUTILS_BASE}/esearch.fcgi", params, timeout,
+                                label=f"esearch DOI={doi}")
+    if resp is None:
+        return None
     try:
-        resp = requests.get(f"{EUTILS_BASE}/esearch.fcgi", params=params, timeout=timeout)
-        resp.raise_for_status()
         data = resp.json()
         ids = data.get("esearchresult", {}).get("idlist", [])
         return ids[0] if ids else None
-    except (requests.RequestException, ValueError) as e:
-        logger.warning(f"esearch DOI={doi} 失敗: {e}")
+    except ValueError as e:
+        logger.warning(f"esearch DOI={doi} 回傳非 JSON: {e}")
         return None
 
 
@@ -88,17 +119,19 @@ def _efetch_one(pmid: str, doi: str, timeout: int, api_key: Optional[str],
     if api_key:
         params["api_key"] = api_key
 
+    resp = _request_with_retry(f"{EUTILS_BASE}/efetch.fcgi", params, timeout,
+                                label=f"efetch PMID={pmid}")
+    if resp is None:
+        return None
     try:
-        resp = requests.get(f"{EUTILS_BASE}/efetch.fcgi", params=params, timeout=timeout)
-        resp.raise_for_status()
         root = ET.fromstring(resp.content)
         time.sleep(rate_limit)
         art = root.find(".//PubmedArticle")
         if art is None:
             return None
         return _parse_article(art, doi, pmid)
-    except (requests.RequestException, ET.ParseError) as e:
-        logger.warning(f"efetch PMID={pmid} 失敗: {e}")
+    except ET.ParseError as e:
+        logger.warning(f"efetch PMID={pmid} XML 解析失敗: {e}")
         return None
 
 

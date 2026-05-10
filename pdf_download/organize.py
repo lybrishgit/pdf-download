@@ -127,8 +127,13 @@ def _doi_from_pdf_metadata(pdf: Path) -> Optional[str]:
     return None
 
 
-def _doi_from_pdf_first_page(pdf: Path, max_chars: int = 3000) -> Optional[str]:
-    """掃第一頁文字找 DOI。"""
+def _doi_from_pdf_first_page(pdf: Path, max_chars: int = 15000) -> Optional[str]:
+    """掃第一頁文字找 DOI。
+
+    max_chars=15000：實測有些期刊（RBTI、MDPI、LWW）會把 DOI 印在
+    第一頁中下方位置（>3000 字），舊上限 3000 會漏抓。15000 字足以
+    覆蓋任何單頁文字量，不會誤掃到第二頁。
+    """
     try:
         reader = PdfReader(str(pdf))
         if not reader.pages:
