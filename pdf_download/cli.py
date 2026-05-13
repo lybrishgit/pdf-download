@@ -17,16 +17,21 @@ import sys
 from pathlib import Path
 
 import yaml
-
-from pdf_download.analyzer import AbstractAnalyzer, load_prompt_template
-from pdf_download.fetch import run_fetch
-from pdf_download.journals import JOURNALS, list_journals
-from pdf_download.organize import organize_pdfs, write_log
-from pdf_download.rename import rename_pdfs
-from pdf_download.state import State
+from dotenv import load_dotenv
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG = REPO_ROOT / "config.yaml"
+
+# 在 import 業務模組之前先 load .env，確保 NCBI_API_KEY / ANTHROPIC_API_KEY
+# 都被 organize / rename / fetch 三條路徑看得到（不只是 analyzer）
+load_dotenv(REPO_ROOT / ".env", override=False)
+
+from pdf_download.analyzer import AbstractAnalyzer, load_prompt_template  # noqa: E402
+from pdf_download.fetch import run_fetch  # noqa: E402
+from pdf_download.journals import JOURNALS, list_journals  # noqa: E402
+from pdf_download.organize import organize_pdfs, write_log  # noqa: E402
+from pdf_download.rename import rename_pdfs  # noqa: E402
+from pdf_download.state import State  # noqa: E402
 
 
 def load_config(path: Path) -> dict:

@@ -18,12 +18,12 @@ from pathlib import Path
 from typing import List, Optional
 
 from pdf_download.lookup import lookup_doi
-from pdf_download.naming import build_pdf_filename
-from pdf_download.organize import (
+from pdf_download.metadata import (
     ArticleMeta,
-    _meta_from_online,
     extract_doi,
+    meta_from_pubmed,
 )
+from pdf_download.naming import build_pdf_filename
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +136,7 @@ def rename_pdfs(
             result.reason = f"PubMed 查不到 DOI：{doi}"
             results.append(result)
             continue
-        meta = _meta_from_online(online_meta)
+        meta = meta_from_pubmed(online_meta)
         result.article = meta
 
         # 3) 組新檔名
