@@ -9,7 +9,7 @@
      c. 還失敗則掃第一頁文字找 DOI 字串
   4. 找到 DOI 就查索引，套用 naming.py 規則改名
   5. shutil.move 到 KB 00-Raw/
-  6. 沒 match 到的留在 _pdfs/，全部寫進 organize-log.md
+  6. 沒 match 到的留在 _pdfs/，全部寫進 organize-log_HHMM.md（每次跑不覆蓋）
 """
 
 from __future__ import annotations
@@ -290,7 +290,7 @@ def write_log(
     kb_raw_dir: Path,
     dry_run: bool,
 ) -> Path:
-    """產 organize-log.md 到 inbox 最新日期資料夾。"""
+    """產 organize-log_HHMM.md 到 inbox 最新日期資料夾（每次跑不覆蓋）。"""
     # 找最新日期資料夾，沒有就用今天
     date_dirs = sorted(
         [d for d in inbox_root.iterdir()
@@ -299,7 +299,8 @@ def write_log(
     )
     log_dir = date_dirs[0] if date_dirs else (inbox_root / datetime.now().strftime("%Y-%m-%d"))
     log_dir.mkdir(parents=True, exist_ok=True)
-    log_path = log_dir / "organize-log.md"
+    # 加 HHMM 避免同一天多次跑覆蓋（launchd 03:00 + 手動偶爾跑）
+    log_path = log_dir / f"organize-log_{datetime.now().strftime('%H%M')}.md"
 
     matched = [r for r in results if r.matched]
     unmatched = [r for r in results if not r.matched]
