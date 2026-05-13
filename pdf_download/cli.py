@@ -280,6 +280,7 @@ def cmd_rename(args: argparse.Namespace) -> int:
         naming_config=naming_config,
         apply=args.apply,
         online_lookup=not args.no_online_lookup,
+        recursive=args.recursive,
     )
 
     if not results:
@@ -382,6 +383,8 @@ def main(argv: list[str] | None = None) -> int:
                           help="實際改名（預設只 dry-run 預覽）")
     p_rename.add_argument("--no-online-lookup", action="store_true",
                           help="不打 PubMed 線上查（純 DOI 抽取，多半會失敗）")
+    p_rename.add_argument("-r", "--recursive", action="store_true",
+                          help="資料夾遞迴掃描子目錄（隱藏目錄如 .git 一律跳過）")
     p_rename.set_defaults(func=cmd_rename)
 
     p_list = sub.add_parser("list-journals", help="列出目前支援的期刊")

@@ -42,8 +42,12 @@ class RenameResult:
     reason: Optional[str] = None         # 失敗或略過原因
 
 
-def _collect_pdfs(paths: List[Path]) -> List[Path]:
-    """攤平輸入路徑：單檔保留、資料夾掃 *.pdf（不遞迴）。"""
+def _collect_pdfs(paths: List[Path], recursive: bool = False) -> List[Path]:
+    """攤平輸入路徑：單檔保留、資料夾掃 *.pdf。
+
+    recursive=True 時用 **/*.pdf 遞迴整個樹，但跳過任何 . 開頭的隱藏目錄
+    （.git / .Trash / .DS_Store 同類）避免污染。
+    """
     out: List[Path] = []
     for p in paths:
         if not p.exists():
@@ -55,9 +59,11 @@ def _collect_pdfs(paths: List[Path]) -> List[Path]:
             else:
                 logger.warning(f"不是 PDF，跳過：{p}")
         elif p.is_dir():
+            pattern = "**/*.pdf" if recursive else "*.pdf"
             out.extend(sorted(
-                f for f in p.glob("*.pdf")
+                f for f in p.glob(pattern)
                 if not f.name.startswith(".")
+                and not any(part.startswith(".") for part in f.relative_to(p).parts)
             ))
     return out
 
@@ -91,6 +97,7 @@ def rename_pdfs(
     naming_config: dict,
     apply: bool = False,
     online_lookup: bool = True,
+    recursive: bool = False,
 ) -> List[RenameResult]:
     """掃 paths（單檔/資料夾），抽 DOI、查 metadata、產生新檔名。
 
@@ -100,11 +107,12 @@ def rename_pdfs(
         apply: False = dry-run（只計算建議檔名）；True = 實際改名
         online_lookup: True 時 DOI 都靠 PubMed 線上查；False 時只看
                        檔名/metadata/第一頁能不能直接抽到 DOI（不查線上）
+        recursive: 資料夾掃描時是否遞迴子目錄（隱藏目錄一律跳過）
 
     Returns:
         每個 PDF 的 RenameResult 清單。
     """
-    pdfs = _collect_pdfs(paths)
+    pdfs = _collect_pdfs(paths, recursive=recursive)
     if not pdfs:
         return []
 
