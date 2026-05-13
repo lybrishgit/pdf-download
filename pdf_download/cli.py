@@ -239,6 +239,10 @@ def cmd_organize(args: argparse.Namespace) -> int:
             if r.doi:
                 print(f"     DOI: {r.doi}")
             print(f"     原因: {r.reason}")
+            if r.unmatched_copy_path:
+                print(f"     📎 已複製到 _unmatched/: {r.unmatched_copy_path.name}")
+            elif r.unmatched_copy_note:
+                print(f"     📎 _unmatched 副本: {r.unmatched_copy_note}")
             print()
 
     log_path = write_log(results, inbox_root, kb_raw_dir, args.dry_run)

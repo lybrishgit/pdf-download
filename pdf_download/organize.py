@@ -48,6 +48,10 @@ class OrganizeResult:
     # None = 沒設定 / 主流程沒成功 / 副本步驟失敗（看 extra_copy_note）
     extra_copy_path: Optional[Path] = None
     extra_copy_note: Optional[str] = None  # 例：「已存在略過」「複製失敗: ...」
+    # _unmatched 副本：article metadata 拿不到時，原檔複製一份到 inbox/_unmatched/
+    # 方便使用者之後手動 review；原檔仍留在 _pdfs/，下次 organize 還會再試
+    unmatched_copy_path: Optional[Path] = None
+    unmatched_copy_note: Optional[str] = None
 
 
 # ---------- 主流程 ----------
@@ -104,6 +108,35 @@ def build_doi_index(inbox_root: Path, max_recent_dirs: int = 8) -> Dict[str, Art
     return index
 
 
+def _copy_to_unmatched(
+    pdf: Path,
+    unmatched_dir: Optional[Path],
+    result: OrganizeResult,
+    dry_run: bool,
+) -> None:
+    """把 metadata 拿不到的 PDF 複製一份到 _unmatched/，記到 result。
+
+    用原檔名直接放（不改名），方便使用者之後人工 review。已存在就略過、
+    失敗只記 warning 不影響主流程。
+    """
+    if unmatched_dir is None:
+        return
+    target = unmatched_dir / pdf.name
+    if target.exists():
+        result.unmatched_copy_note = "已存在略過"
+        return
+    if dry_run:
+        result.unmatched_copy_path = target
+        result.unmatched_copy_note = "(dry-run)"
+        return
+    try:
+        shutil.copy2(str(pdf), str(target))
+        result.unmatched_copy_path = target
+    except OSError as e:
+        result.unmatched_copy_note = f"複製失敗: {e}"
+        logger.warning(f"  _unmatched 副本複製失敗 {target}: {e}")
+
+
 def organize_pdfs(
     inbox_root: Path,
     kb_raw_dir: Path,
@@ -143,6 +176,7 @@ def organize_pdfs(
     logger.info(f"找到 {len(pdfs)} 個 PDF 要處理")
 
     # 3) 逐一處理
+    unmatched_dir: Optional[Path] = inbox_root / "_unmatched"
     if not dry_run:
         kb_raw_dir.mkdir(parents=True, exist_ok=True)
         if extra_copy_dir:
@@ -151,6 +185,11 @@ def organize_pdfs(
             except OSError as e:
                 logger.warning(f"額外副本資料夾建立失敗，本次跳過複製：{extra_copy_dir} ({e})")
                 extra_copy_dir = None
+        try:
+            unmatched_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            logger.warning(f"_unmatched 資料夾建立失敗，本次跳過備份：{unmatched_dir} ({e})")
+            unmatched_dir = None
 
     results: List[OrganizeResult] = []
     max_title_chars = naming_config.get("max_title_chars", 35)
@@ -163,6 +202,7 @@ def organize_pdfs(
         doi, method = extract_doi(pdf)
         if not doi:
             result.reason = "DOI 抽取失敗（檔名 / metadata / 第一頁都沒找到）"
+            _copy_to_unmatched(pdf, unmatched_dir, result, dry_run)
             results.append(result)
             continue
 
@@ -184,6 +224,7 @@ def organize_pdfs(
                 result.reason = "DOI 不在 inbox 索引，PubMed 也查不到"
             else:
                 result.reason = "DOI 不在 inbox 索引（線上查 disabled）"
+            _copy_to_unmatched(pdf, unmatched_dir, result, dry_run)
             results.append(result)
             continue
 
@@ -292,6 +333,10 @@ def write_log(
         for r in unmatched:
             doi_part = f"DOI: `{r.doi}`" if r.doi else "DOI: 未知"
             lines.append(f"- `{r.source.name}` — {doi_part} — {r.reason}")
+            if r.unmatched_copy_path:
+                lines.append(f"    - 📎 已複製到 `{r.unmatched_copy_path}`")
+            elif r.unmatched_copy_note:
+                lines.append(f"    - 📎 _unmatched 副本：{r.unmatched_copy_note}")
         lines.append("")
 
     log_path.write_text("\n".join(lines), encoding="utf-8")
