@@ -31,13 +31,15 @@ naming:
   # 標題關鍵字最大字元數（不含年份/期刊前綴）
   max_title_chars: 35
   # 移除的 stopwords（小寫比對）
+  # ⚠️ YAML 1.1 會把 on/off/yes/no/true/false 等解析為 Boolean，
+  #    這些字若要當 stopword 必須加引號（如 "on"）才會被當字串處理
   stopwords:
     - a
     - an
     - the
     - of
     - in
-    - on
+    - "on"
     - at
     - to
     - for

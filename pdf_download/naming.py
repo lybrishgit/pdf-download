@@ -60,6 +60,11 @@ EXTENDED_ABBREV_MAP = {
     "medicine (baltimore)": "Medicine",
     "chron respir dis": "ChronRespirDis",
     "expert rev clin pharmacol": "ExpertRevClinPharmacol",
+    "respir res": "RespirRes",
+    # 通用大刊（讓三支改名工具涵蓋一致）
+    "nature": "Nature",
+    "science": "Science",
+    "cell": "Cell",
 }
 
 
@@ -111,7 +116,8 @@ def slugify_title(
       4. 用 _ 連接
       5. 截斷到 max_chars（在 _ 邊界截）
     """
-    sw = set(stopwords) if stopwords is not None else DEFAULT_STOPWORDS
+    # 強制轉字串：防 YAML 1.1 把 on/off/yes/no 解析成 Boolean 漏進來
+    sw = set(str(w) for w in stopwords) if stopwords is not None else DEFAULT_STOPWORDS
 
     # 移除 italic/bold 標記與奇怪標點
     cleaned = re.sub(r"[*_`]", " ", title)
@@ -140,21 +146,45 @@ def slugify_title(
     return slug
 
 
+# ──────────────────────────────────────────────────────────────────
+# 類型後綴對照表（命名規則的「真理來源」）
+# ──────────────────────────────────────────────────────────────────
+# 順序很重要：更具體的擺前面，先命中先回（例如 meta-analysis 常同時被
+# PubMed 標成 "Systematic Review"，但我們要先判定成 _MA）。
+#
+# ⚠️ 同步提醒：以下兩支獨立腳本各自保有一份「逐字相同」的副本，
+#    改這裡記得一起改：
+#      - projects/downloads-organizer/scripts/medical_rename.py
+#      - projects/pdf-rename-claude/rename_pdf.py
+TYPE_SUFFIX_MAP = [
+    ("meta-analysis", "_MA"),
+    ("meta analysis", "_MA"),
+    ("systematic review", "_SR"),
+    ("randomized controlled trial", "_RCT"),
+    ("practice guideline", "_Guideline"),
+    ("guideline", "_Guideline"),
+    ("recommendation", "_Guideline"),
+    ("review", "_Review"),
+    ("case reports", "_CaseReport"),
+    ("case report", "_CaseReport"),
+    ("editorial", "_Editorial"),
+    ("perspective", "_Perspective"),
+    ("letter", "_Letter"),
+]
+
+
 def article_type_suffix(article_type: str) -> str:
-    """從 article type 推 skill 規定的後綴。"""
+    """從 article type 推檔名後綴（B 案：細分證據類型）。
+
+    輸入可以是單一字串或多個 publication type 串接而成的字串，
+    一律小寫子字串比對，依 TYPE_SUFFIX_MAP 順序先命中先回。
+    """
     if not article_type:
         return ""
     t = article_type.lower()
-    if "review" in t and "systematic" not in t and "meta" not in t:
-        return "_Review"
-    if "systematic review" in t or "meta-analysis" in t or "meta analysis" in t:
-        return "_SR"
-    if "guideline" in t or "recommendation" in t:
-        return "_Guideline"
-    if "editorial" in t:
-        return "_Editorial"
-    if "perspective" in t:
-        return "_Perspective"
+    for needle, suffix in TYPE_SUFFIX_MAP:
+        if needle in t:
+            return suffix
     return ""
 
 
