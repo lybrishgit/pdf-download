@@ -12,6 +12,11 @@ kb_raw_dir: "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/MyKnowledge
 # 留空字串可關閉
 extra_copy_dir: "~/Library/Mobile Documents/com~apple~CloudDocs/[臨床] 醫學資料/_待分類"
 
+# inbox 副本資料夾（每篇 organize 成功的 PDF 再複製一份到這）
+# 用途：作為後續流程（OE pipeline 等）的輸入來源
+# 留空字串可關閉
+inbox_mirror_dir: "~/lybrish_claude/inbox/_unclassified"
+
 # State file（記錄各期刊上次抓到哪期）
 state_file: "~/.config/pdf-download/state.json"
 

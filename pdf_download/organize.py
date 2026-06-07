@@ -52,6 +52,10 @@ class OrganizeResult:
     # 方便使用者之後手動 review；原檔仍留在 _pdfs/，下次 organize 還會再試
     unmatched_copy_path: Optional[Path] = None
     unmatched_copy_note: Optional[str] = None
+    # inbox 副本：成功 organize 的 PDF 再複製一份到工作區 inbox（lybrish_claude/inbox/_unclassified）
+    # 用途：作為後續流程（OE pipeline 等）的輸入來源
+    inbox_mirror_path: Optional[Path] = None
+    inbox_mirror_note: Optional[str] = None
 
 
 # ---------- 主流程 ----------
@@ -108,6 +112,50 @@ def build_doi_index(inbox_root: Path, max_recent_dirs: int = 8) -> Dict[str, Art
     return index
 
 
+def _setup_mirror_dir(dest_dir: Optional[Path], label: str) -> Optional[Path]:
+    """副本資料夾 mkdir，失敗就降級回 None 並 warning。
+
+    給 _pdfs/ 三條副本鏈用（extra_copy / inbox_mirror / _unmatched）。
+    """
+    if dest_dir is None:
+        return None
+    try:
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        return dest_dir
+    except OSError as e:
+        logger.warning(f"{label} 資料夾建立失敗，本次跳過：{dest_dir} ({e})")
+        return None
+
+
+def _mirror_to(
+    src: Path,
+    dest_dir: Optional[Path],
+    dry_run: bool,
+) -> tuple[Optional[Path], Optional[str]]:
+    """通用副本 helper：把 src 複製到 dest_dir/src.name，回傳 (path, note)。
+
+    回傳語意：
+    - dest_dir is None  → (None, None)         未啟用此副本
+    - 目標已存在        → (None, "已存在略過")
+    - dry_run           → (target, "(dry-run)")
+    - 成功              → (target, None)
+    - 失敗              → (None, f"複製失敗: {e}")
+    """
+    if dest_dir is None:
+        return None, None
+    target = dest_dir / src.name
+    if target.exists():
+        return None, "已存在略過"
+    if dry_run:
+        return target, "(dry-run)"
+    try:
+        shutil.copy2(str(src), str(target))
+        return target, None
+    except OSError as e:
+        logger.warning(f"  副本複製失敗 {target}: {e}")
+        return None, f"複製失敗: {e}"
+
+
 def _copy_to_unmatched(
     pdf: Path,
     unmatched_dir: Optional[Path],
@@ -119,22 +167,10 @@ def _copy_to_unmatched(
     用原檔名直接放（不改名），方便使用者之後人工 review。已存在就略過、
     失敗只記 warning 不影響主流程。
     """
-    if unmatched_dir is None:
-        return
-    target = unmatched_dir / pdf.name
-    if target.exists():
-        result.unmatched_copy_note = "已存在略過"
-        return
-    if dry_run:
-        result.unmatched_copy_path = target
-        result.unmatched_copy_note = "(dry-run)"
-        return
-    try:
-        shutil.copy2(str(pdf), str(target))
-        result.unmatched_copy_path = target
-    except OSError as e:
-        result.unmatched_copy_note = f"複製失敗: {e}"
-        logger.warning(f"  _unmatched 副本複製失敗 {target}: {e}")
+    path, note = _mirror_to(pdf, unmatched_dir, dry_run)
+    if path is not None or note is not None:
+        result.unmatched_copy_path = path
+        result.unmatched_copy_note = note
 
 
 def organize_pdfs(
@@ -144,6 +180,7 @@ def organize_pdfs(
     dry_run: bool = False,
     online_lookup: bool = True,
     extra_copy_dir: Optional[Path] = None,
+    inbox_mirror_dir: Optional[Path] = None,
 ) -> List[OrganizeResult]:
     """把 inbox_root/_pdfs/ 的 PDF 處理完，回傳結果清單。
 
@@ -153,6 +190,9 @@ def organize_pdfs(
         extra_copy_dir: 若給定，每篇成功 organize 的 PDF 會複製一份到這個資料夾。
                         失敗只記 warning 不影響主流程；目標已存在就跳過。
                         用途：跨裝置同步待讀清單（如 iCloud Drive 給 iPad / iPhone）。
+        inbox_mirror_dir: 若給定，每篇成功 organize 的 PDF 再複製一份到工作區 inbox。
+                          用途：作為後續流程（OE pipeline 等）的輸入來源。
+                          行為跟 extra_copy_dir 一致（複製、已存在略過、失敗 warning）。
     """
     pdfs_dir = inbox_root / "_pdfs"
     if not pdfs_dir.exists():
@@ -179,17 +219,9 @@ def organize_pdfs(
     unmatched_dir: Optional[Path] = inbox_root / "_unmatched"
     if not dry_run:
         kb_raw_dir.mkdir(parents=True, exist_ok=True)
-        if extra_copy_dir:
-            try:
-                extra_copy_dir.mkdir(parents=True, exist_ok=True)
-            except OSError as e:
-                logger.warning(f"額外副本資料夾建立失敗，本次跳過複製：{extra_copy_dir} ({e})")
-                extra_copy_dir = None
-        try:
-            unmatched_dir.mkdir(parents=True, exist_ok=True)
-        except OSError as e:
-            logger.warning(f"_unmatched 資料夾建立失敗，本次跳過備份：{unmatched_dir} ({e})")
-            unmatched_dir = None
+        extra_copy_dir = _setup_mirror_dir(extra_copy_dir, "額外副本")
+        inbox_mirror_dir = _setup_mirror_dir(inbox_mirror_dir, "inbox 副本")
+        unmatched_dir = _setup_mirror_dir(unmatched_dir, "_unmatched")
 
     results: List[OrganizeResult] = []
     max_title_chars = naming_config.get("max_title_chars", 35)
@@ -261,23 +293,15 @@ def organize_pdfs(
                 results.append(result)
                 continue
 
-        # 額外副本：搬到 KB 後再從 target 複製過去（避免讀已不存在的 source）
-        if extra_copy_dir:
-            extra_target = extra_copy_dir / new_name
-            if extra_target.exists():
-                result.extra_copy_note = "已存在略過"
-                logger.info(f"  副本已存在，略過：{extra_target}")
-            elif dry_run:
-                result.extra_copy_path = extra_target
-                result.extra_copy_note = "(dry-run)"
-            else:
-                try:
-                    shutil.copy2(str(target), str(extra_target))
-                    result.extra_copy_path = extra_target
-                except OSError as e:
-                    # 副本失敗不影響主流程，只記 warning
-                    result.extra_copy_note = f"複製失敗: {e}"
-                    logger.warning(f"  副本複製失敗 {extra_target}: {e}")
+        # 副本：搬到 KB 後從 target 再複製到副本資料夾
+        # dry_run 下 _mirror_to 不會真的讀 src（只用 src.name 組目標路徑），
+        # 所以這裡 target 即使還沒實際被搬過去也安全
+        result.extra_copy_path, result.extra_copy_note = _mirror_to(
+            target, extra_copy_dir, dry_run
+        )
+        result.inbox_mirror_path, result.inbox_mirror_note = _mirror_to(
+            target, inbox_mirror_dir, dry_run
+        )
 
         results.append(result)
 

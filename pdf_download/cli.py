@@ -186,14 +186,18 @@ def cmd_organize(args: argparse.Namespace) -> int:
     inbox_root = expand(config["inbox_root"])
     kb_raw_dir = expand(config["kb_raw_dir"])
     naming_config = config.get("naming", {})
-    # extra_copy_dir 是選用：留空字串或不設都當作關閉
+    # 副本資料夾（兩個都是選用：留空字串或不設都當作關閉）
     raw_extra = config.get("extra_copy_dir") or ""
     extra_copy_dir = expand(raw_extra) if raw_extra.strip() else None
+    raw_mirror = config.get("inbox_mirror_dir") or ""
+    inbox_mirror_dir = expand(raw_mirror) if raw_mirror.strip() else None
 
     print(f"📥 來源: {inbox_root / '_pdfs'}")
     print(f"📤 目標: {kb_raw_dir}")
     if extra_copy_dir:
-        print(f"📎 副本: {extra_copy_dir}")
+        print(f"📎 副本(待分類): {extra_copy_dir}")
+    if inbox_mirror_dir:
+        print(f"📎 副本(inbox):  {inbox_mirror_dir}")
     if args.dry_run:
         print("🧪 DRY RUN — 不會實際搬檔，只列出會做什麼")
     print()
@@ -206,6 +210,7 @@ def cmd_organize(args: argparse.Namespace) -> int:
             dry_run=args.dry_run,
             online_lookup=not args.no_online_lookup,
             extra_copy_dir=extra_copy_dir,
+            inbox_mirror_dir=inbox_mirror_dir,
         )
     except RuntimeError as e:
         sys.exit(f"❌ {e}")
@@ -227,9 +232,13 @@ def cmd_organize(args: argparse.Namespace) -> int:
             print(f"  → {r.target.name}")
             print(f"     DOI: {r.doi} ({r.extract_method})")
             if r.extra_copy_path:
-                print(f"     📎 副本: {r.extra_copy_path}")
+                print(f"     📎 待分類: {r.extra_copy_path}")
             elif r.extra_copy_note:
-                print(f"     📎 副本: {r.extra_copy_note}")
+                print(f"     📎 待分類: {r.extra_copy_note}")
+            if r.inbox_mirror_path:
+                print(f"     📎 inbox:   {r.inbox_mirror_path}")
+            elif r.inbox_mirror_note:
+                print(f"     📎 inbox:   {r.inbox_mirror_note}")
             print()
 
     if unmatched:
