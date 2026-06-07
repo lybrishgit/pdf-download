@@ -70,7 +70,7 @@ pdf_download/
 ├── fetch.py            # 抓取主流程：跑 fetcher + renderer + state
 ├── render.py           # Jinja2 渲染 .md / .html
 ├── state.py            # state.json 讀寫
-├── naming.py           # PDF 改名規則（沿用 med-literature-organizer skill）
+├── naming.py           # PDF 改名規則 B 案（9 種類型後綴；另兩支同步副本見 §7）
 ├── journals/
 │   ├── base.py         # Article / IssueInfo dataclass
 │   ├── registry.py     # 11 本期刊 config (ISO abbrev / PDF URL pattern / cadence)
@@ -140,7 +140,12 @@ pdf_download/
 
 - **不直接修改 KB 系統**（`KnowledgeBase-Scripts/`）
 - **未來 organize 指令**：只丟檔案進 `00-Raw/`，不參與 KB 內部消化邏輯
-- **命名規則**：以 `med-literature-organizer` skill 為準（`naming.py` 沿用）
+- **命名規則（B 案 9 種類型後綴）**：母本是 `pdf_download/naming.py`，系統內另兩支同步副本：
+  - `projects/downloads-organizer/scripts/medical_rename.py`
+  - `projects/pdf-rename-claude/rename_pdf.py`（零依賴單檔，為醫院 Windows 設計）
+  - **改後綴表或期刊縮寫表時三邊一起改**（各檔頂部有「⚠️ 同步副本」註記提醒）
+  - 處理原則：新規則只套用到之後的新資料，**舊檔不回頭翻新**（如要翻新需另寫一次性掃描）
+  - 第 4 支獨立物種 `med-literature-organizer` skill 含查重 + 多格式，不參與本命名統一
 
 ---
 
