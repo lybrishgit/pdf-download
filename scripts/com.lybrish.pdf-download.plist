@@ -16,6 +16,7 @@
     <string>pdf_download.cli</string>
     <string>fetch</string>
     <string>--notify</string>
+    <string>--email</string>
     <string>--silent-when-empty</string>
   </array>
 
