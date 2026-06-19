@@ -18,6 +18,7 @@ import json
 import logging
 import re
 import shutil
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -110,6 +111,33 @@ def build_doi_index(inbox_root: Path, max_recent_dirs: int = 8) -> Dict[str, Art
 
     logger.info(f"DOI 索引建好，共 {len(index)} 篇來自 {len(date_dirs)} 個日期資料夾")
     return index
+
+
+def _ensure_local(pdf: Path, retries: int = 3, wait: float = 3.0) -> bool:
+    """強制把 GDrive 串流佔位檔的內容拉到本機，回傳是否就緒。
+
+    為什麼需要這個：Google Drive 桌面版的「線上才有」檔案平常是 dataless 佔位檔，
+    內容沒真的存在本機磁碟。launchd 03:00 批次跑 organize 時，剛同步進 _pdfs/ 的 PDF
+    很可能還沒被下載，pypdf 讀到空內容 → DOI 抽取「靜默失敗」→ 被誤判成爛檔。
+
+    解法：抽 DOI 前先「整檔讀一遍」觸發 GDrive 隨選下載；讀成功且非 0 byte 才算就緒。
+    讀不到就等一下重試，重試用盡仍失敗回 False，交給呼叫端把檔案留在 _pdfs/ 下次再試
+    （而不是當成 DOI 失敗複製到 _unmatched）。
+    """
+    for attempt in range(1, retries + 1):
+        try:
+            size = 0
+            with open(pdf, "rb") as fh:
+                while chunk := fh.read(1024 * 1024):
+                    size += len(chunk)
+            if size > 0:
+                return True
+            logger.warning(f"  {pdf.name} 讀到 0 byte（疑似 GDrive 佔位檔），第 {attempt}/{retries} 次重試")
+        except OSError as e:
+            logger.warning(f"  {pdf.name} 串流下載失敗（第 {attempt}/{retries} 次）：{e}")
+        if attempt < retries:
+            time.sleep(wait)
+    return False
 
 
 def _setup_mirror_dir(dest_dir: Optional[Path], label: str) -> Optional[Path]:
@@ -229,6 +257,13 @@ def organize_pdfs(
 
     for pdf in pdfs:
         result = OrganizeResult(source=pdf, matched=False)
+
+        # GDrive 串流檔修復：抽 DOI 前先確認檔案內容已在本機。佔位檔讀不到內容會讓
+        # DOI 抽取靜默失敗、被誤判成爛檔；這裡讀不到就留在 _pdfs/ 下次再試，不污染 _unmatched。
+        if not _ensure_local(pdf):
+            result.reason = "檔案內容尚未串流到本機（GDrive 佔位檔），留待下次 organize 重試"
+            results.append(result)
+            continue
 
         # 抽 DOI
         doi, method = extract_doi(pdf)
