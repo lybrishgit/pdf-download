@@ -138,17 +138,41 @@ def cmd_fetch(args: argparse.Namespace) -> int:
         for f in summary["failed"]:
             print(f"  • {f['journal']:12s} {f['reason']}")
 
+    # --email：給 launchd 週日排程用，跑完寄一封摘要信（有抓到新內容才寄）
+    if getattr(args, "email", False):
+        if not summary["fetched"]:
+            if not args.silent_when_empty:
+                print("ℹ️  本次沒有新內容，不寄 email")
+        else:
+            try:
+                from pdf_download import email_report
+                fetch_date = summary["out_dir"].name
+                subject = email_report.build_subject(summary, fetch_date)
+                text_body, html_body = email_report.build_bodies(summary, fetch_date)
+                # 各期評析頁 .html 當附件帶上（點開即完整評析版面）
+                attachments = [
+                    f["html_path"] for f in summary["fetched"] if f.get("html_path")
+                ]
+                email_report.send_report(
+                    config.get("email", {}), subject, text_body, html_body,
+                    attachments=attachments,
+                )
+                print(f"📧 摘要 email 已寄出（含 {len(attachments)} 份評析頁附件）")
+            except Exception as e:
+                # 寄信失敗不影響 fetch 結果（abstract 已經產好了）
+                print(f"⚠️  email 寄送失敗：{e}")
+
     # --notify：給 launchd 排程用，跑完發 macOS 通知
     if args.notify:
         n_ok = len(summary["fetched"])
         n_failed = len(summary["failed"])
         n_skipped = len(summary["skipped"])
         total_articles = sum(f["article_count"] for f in summary["fetched"])
-        # 計算必讀篇數（從 .md 檔抓）
-        try:
-            must_read = _count_must_read(summary["out_dir"])
-        except Exception:
-            must_read = None
+        # 必讀篇數：從結構化文章清單算 action=="必讀"（比掃 .md 數字串準）
+        must_read = sum(
+            1 for f in summary["fetched"] for a in f.get("articles", [])
+            if a.get("action") == "必讀"
+        )
 
         if n_ok == 0 and n_failed == 0:
             if not args.silent_when_empty:
@@ -164,20 +188,6 @@ def cmd_fetch(args: argparse.Namespace) -> int:
                          f"成功 {n_ok} · 失敗 {n_failed}")
 
     return 1 if summary["failed"] else 0
-
-
-def _count_must_read(out_dir: Path) -> int:
-    """從輸出 .md 統計必讀篇數。"""
-    count = 0
-    for md in out_dir.glob("*.md"):
-        if md.name == "INDEX.md":
-            continue
-        try:
-            text = md.read_text(encoding="utf-8")
-            count += text.count("必讀")
-        except OSError:
-            pass
-    return count
 
 
 def cmd_organize(args: argparse.Namespace) -> int:
@@ -367,8 +377,10 @@ def main(argv: list[str] | None = None) -> int:
                          help="強制重跑 AI 評析，忽略 cache")
     p_fetch.add_argument("--notify", action="store_true",
                          help="跑完發 macOS 通知（給 launchd 排程用）")
+    p_fetch.add_argument("--email", action="store_true",
+                         help="跑完寄摘要 email（需 config 的 email 區塊 + .env 的 SMTP_PASSWORD）")
     p_fetch.add_argument("--silent-when-empty", action="store_true",
-                         help="搭配 --notify：沒新內容時不通知")
+                         help="搭配 --notify / --email：沒新內容時不通知、不寄信")
     p_fetch.set_defaults(func=cmd_fetch)
 
     p_org = sub.add_parser("organize", help="掃 _pdfs/，改名後搬到 KB 的 00-Raw/")

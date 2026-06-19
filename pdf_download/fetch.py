@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from pdf_download.analyzer import AbstractAnalyzer, load_prompt_template
 from pdf_download.journals import JOURNALS, get_fetcher
@@ -33,6 +33,7 @@ def run_fetch(
     out_dir = inbox_root / fetch_date
 
     issues: List[IssueInfo] = []
+    rendered_html: Dict[str, Path] = {}  # issue_id → 評析頁 .html 路徑（給 email 當附件）
     failed: List[dict] = []
     skipped: List[dict] = []
 
@@ -80,6 +81,7 @@ def run_fetch(
         logger.info(f"{slug} → {md_path.name} ({len(issue.articles)} 篇)")
 
         issues.append(issue)
+        rendered_html[issue.issue_id] = html_path
         state.record_fetch(slug, issue.issue_id, issue.publication_date)
 
     if issues:
@@ -108,6 +110,19 @@ def run_fetch(
             "publication_date": i.publication_date,
             "article_count": len(i.articles),
             "oa_count": i.oa_count,
+            # 評析頁 .html 路徑（email 當附件帶上，點開就是完整評析版面）
+            "html_path": str(rendered_html.get(i.issue_id, "")),
+            # 全部文章（給 email 內文列出，OA 可直接點原文）；必讀數由 action 推算
+            "articles": [
+                {
+                    "title": a.title,
+                    "url": a.article_url or (f"https://doi.org/{a.doi}" if a.doi else ""),
+                    "is_oa": a.is_open_access,
+                    "stars": a.ai_analysis.stars if a.ai_analysis else 0,
+                    "action": a.ai_analysis.action if a.ai_analysis else "",
+                }
+                for a in i.articles
+            ],
         } for i in issues],
         "skipped": skipped,
         "failed": failed,

@@ -96,3 +96,13 @@ ai_analysis:
   prompt_file: prompts/abstract_review.txt
   cache_file: ~/.config/pdf-download/ai-cache.json
   max_tokens: 600                        # 每篇回應上限
+
+# 每週摘要 email（fetch 加 --email 才寄；沒抓到新內容不寄）
+# 密碼「不」寫在這裡：放 .env 的 SMTP_PASSWORD（Gmail 要用「應用程式密碼」16 碼，因為開了兩步驗證）
+email:
+  enabled: true
+  smtp_host: smtp.gmail.com
+  smtp_port: 465                         # SSL
+  sender: lybrish@gmail.com
+  recipient: lybrish@gmail.com
+  password_env: SMTP_PASSWORD            # 從這個環境變數讀密碼
