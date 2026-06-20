@@ -203,6 +203,19 @@ Python 從 Terminal 寫入 `~/Library/CloudStorage/` 預設被 macOS TCC 擋（P
 
 設定後重開 Terminal 就生效。
 
+### GDrive 串流檔（dataless / 截斷）與 organize 的防呆
+
+GDrive 桌面版的檔案預設是「線上才有」的佔位檔，內容不在本機。launchd 03:00 批次跑
+organize 時，剛同步進 `_pdfs/` 的 PDF 可能還沒就緒，有兩種狀態都會害 `extract_doi` 失敗：
+
+1. **完全沒下載** → 讀到空 / OSError
+2. **只下載一半** → GDrive 回傳「截斷」內容卻不報錯（實測見過 8MB 檔只給剛好 4MB，
+   殘缺檔還會被複製成 `_unmatched/` 的垃圾）
+
+防呆在 `organize._ensure_local()`：抽 DOI 前整檔讀一遍觸發隨選下載，並驗證是**完整 PDF**
+（`%PDF-` 開頭 + 結尾 2KB 內有 `%%EOF`）才算就緒；不完整就留在 `_pdfs/` 下次重試，不誤判成
+DOI 失敗、不污染 `_unmatched/`。**只看 size>0 擋不住截斷，所以一定要驗結構。**（2026-06-20 加固）
+
 ---
 
 ## 9. 風格

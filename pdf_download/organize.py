@@ -113,28 +113,38 @@ def build_doi_index(inbox_root: Path, max_recent_dirs: int = 8) -> Dict[str, Art
     return index
 
 
-def _ensure_local(pdf: Path, retries: int = 3, wait: float = 3.0) -> bool:
-    """強制把 GDrive 串流佔位檔的內容拉到本機，回傳是否就緒。
+def _ensure_local(pdf: Path, retries: int = 4, wait: float = 3.0) -> bool:
+    """強制把 GDrive 串流佔位檔的內容拉到本機，並確認是「完整」PDF 才算就緒。
 
     為什麼需要這個：Google Drive 桌面版的「線上才有」檔案平常是 dataless 佔位檔，
     內容沒真的存在本機磁碟。launchd 03:00 批次跑 organize 時，剛同步進 _pdfs/ 的 PDF
-    很可能還沒被下載，pypdf 讀到空內容 → DOI 抽取「靜默失敗」→ 被誤判成爛檔。
+    可能有兩種沒就緒的狀態，兩種都會讓 extract_doi 失敗：
+      (a) 完全沒下載 → 讀到空內容 / OSError
+      (b) 只下載一半 → GDrive 回傳「截斷」內容卻不報錯（實測 8MB 檔只給剛好 4MB）
 
-    解法：抽 DOI 前先「整檔讀一遍」觸發 GDrive 隨選下載；讀成功且非 0 byte 才算就緒。
-    讀不到就等一下重試，重試用盡仍失敗回 False，交給呼叫端把檔案留在 _pdfs/ 下次再試
-    （而不是當成 DOI 失敗複製到 _unmatched）。
+    所以光看「size > 0」擋不住 (b)。這裡多驗 PDF 結構：開頭要有 %PDF-、結尾附近要有
+    %%EOF（PDF 規格的結束標記），兩者齊全才算真的完整就緒。截斷檔結尾沒有 %%EOF，
+    就會被擋下、留待重試。讀不到 / 不完整就等一下重試，用盡仍失敗回 False，
+    交給呼叫端把檔案留在 _pdfs/ 下次再試（不當成 DOI 失敗、不複製到 _unmatched）。
     """
     for attempt in range(1, retries + 1):
         try:
-            size = 0
-            with open(pdf, "rb") as fh:
-                while chunk := fh.read(1024 * 1024):
-                    size += len(chunk)
-            if size > 0:
-                return True
-            logger.warning(f"  {pdf.name} 讀到 0 byte（疑似 GDrive 佔位檔），第 {attempt}/{retries} 次重試")
+            data = pdf.read_bytes()  # 整檔讀進來觸發 GDrive 隨選下載
         except OSError as e:
             logger.warning(f"  {pdf.name} 串流下載失敗（第 {attempt}/{retries} 次）：{e}")
+            data = b""
+
+        # 完整 PDF：%PDF- 開頭 + 結尾 2KB 內有 %%EOF
+        if data.startswith(b"%PDF-") and b"%%EOF" in data[-2048:]:
+            return True
+
+        if not data:
+            logger.warning(f"  {pdf.name} 讀到空內容（疑似 GDrive 佔位檔），第 {attempt}/{retries} 次重試")
+        else:
+            logger.warning(
+                f"  {pdf.name} 內容不完整（{len(data)} bytes，缺 %PDF/%%EOF，疑似 GDrive 截斷），"
+                f"第 {attempt}/{retries} 次重試"
+            )
         if attempt < retries:
             time.sleep(wait)
     return False
