@@ -2,6 +2,8 @@
 
 > Claude Code 啟動時自動讀取此檔。在這個專案中請依此規範行事。
 
+> **📓 Session log 慣例**：本專案**無獨立 journal**。每次 session 日誌一律併入主工作區 `0_System/journal/YYYY-MM/YYYY-MM-DD.md` 同日主檔（當天檔已存在先 Read 再 append 成新 Session 區塊、開頭標來源「pdf-download」）。**絕不在本資料夾或 workspace 根目錄另開 `journal/`**（2026-07-05 定，防 root-journal 分流重演）。（注意：本檔多處「journal」指醫學期刊，與此 session log 無關。）
+
 ---
 
 ## 1. 你是誰、為誰服務
