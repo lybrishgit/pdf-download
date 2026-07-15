@@ -33,22 +33,30 @@
 
 ---
 
-### unpaywall API 整合，fetch 完自動下載 OA 全文
+### ~~unpaywall API 整合，fetch 完自動下載 OA 全文~~ → ✅ 已做（2026-07-15），但**原本的規劃是錯的**
 
-**想做的理由**
-- weekly 11 本期刊中 OA 比例不低（Thorax / ERJ / 部分 BMJ / 部分 ICM）
-- 目前要手動點 PDF 連結 → 自動化估計能省 30-50% 手動下載時間
-- 沒有法律 / 政策風險（OA 本來就免費可下載）
+**已上線**：`fetch --download-oa`（`pdf_download/oa_fetch.py`），週日排程已掛。
 
-**大概怎麼做**
-- 抓到 abstract 時順手 query unpaywall（`GET api.unpaywall.org/v2/{DOI}?email=...`）
-- 若 `is_oa: true` + `best_oa_location.url_for_pdf` 有值 → 直接下載到 `_pdfs/`
-- 命名套 `naming.py`，下次 organize 看到就收
+**這條為什麼值得留著當教訓**：本條原本寫「query unpaywall → 看 `best_oa_location.url_for_pdf` →
+下載」。2026-07-15 用 72 篇真實資料實測，證明**這個做法是啞彈**：
 
-**評估要點**
-- 確認 unpaywall rate limit（要不要註冊、能否承受 11 本 × 數十篇）
-- 失敗策略：unpaywall 拿不到 / 下載失敗 → 略過、不影響 fetch 主流程
-- 是否值得做，看你「OA 篇數佔比 × 手動點的痛感」
+| 路由 | 單獨命中（72 篇） |
+|---|---|
+| **純 Unpaywall（本條原本的規劃）** | **7/72 ＝ 9.7%** ← 做了等於沒做 |
+| Semantic Scholar `openAccessPdf` | 27/72 ＝ 37.5% |
+| PMC（有 PMCID → Europe PMC） | 23/72 ＝ 31.9% |
+| **三者聯集（實際採用）** | **33/72 ＝ 45.8%** |
+
+主因：Unpaywall 常說「是 OA」卻只給落地頁、`url_for_pdf` 是 None（實測 24 篇這種，
+其中 23 篇靠 S2/PMC 救回）。**價值全在「多問幾個索引」，不在 Unpaywall。**
+
+**實作上被實測推翻的另外兩點**（別再走回頭路）：
+- **不要用 `is_open_access` 當閘門**：聯集 33 篇 > PubMed 標 OA 的 24 篇，多出的是
+  作者手稿 / 典藏版。對全部有 DOI 的篇都走一次階梯。
+- **Unpaywall 不是多餘的**：它單獨命中低、且在聯集裡加成為 0，一度以為可以拿掉；
+  但實測 S2 會回 429，那時 Unpaywall 是唯一把漏的撈回來的安全網。**留著當 fallback。**
+
+命中集中在重症/胸腔（ICM 3/3、AJRCCM 7/10、CCM 13/24）；NEJM 1/14（付費牆重鎮）。
 
 ---
 
@@ -100,4 +108,4 @@
 
 ---
 
-**最後更新**：2026-06-19
+**最後更新**：2026-07-15

@@ -110,6 +110,13 @@ def cmd_fetch(args: argparse.Namespace) -> int:
         print(f"🤖 AI 評析：{analyzer.model} (cache: {analyzer.cache.path})")
     print()
 
+    oa_config = config.get("oa_download", {})
+    want_oa = args.download_oa and oa_config.get("enabled", False)
+    if args.download_oa and not want_oa:
+        print("⚠️  --download-oa：config 的 oa_download.enabled 不是 true，跳過")
+    if want_oa:
+        print(f"📄 OA 全文下載：{'DRY-RUN（只列不抓）' if args.oa_dry_run else '開啟'} → {inbox_root / '_pdfs'}")
+
     summary = run_fetch(
         journal_slugs=slugs,
         inbox_root=inbox_root,
@@ -118,6 +125,12 @@ def cmd_fetch(args: argparse.Namespace) -> int:
         force=args.force,
         analyzer=analyzer,
         force_reanalyze=args.reanalyze,
+        download_oa=want_oa,
+        oa_config=oa_config,
+        oa_dry_run=args.oa_dry_run,
+        # 給 OA 去重用：算得出 KB 目標檔名才知道這篇是不是已經有了
+        kb_raw_dir=expand(config["kb_raw_dir"]),
+        naming_config=config.get("naming", {}),
     )
 
     print(f"\n✅ 完成！輸出資料夾：{summary['out_dir']}\n")
@@ -137,6 +150,25 @@ def cmd_fetch(args: argparse.Namespace) -> int:
         print("\n❌ 失敗：")
         for f in summary["failed"]:
             print(f"  • {f['journal']:12s} {f['reason']}")
+
+    if summary.get("oa"):
+        oa = summary["oa"]
+        got = [o for o in oa if o["ok"]]
+        print(f"\n📄 OA 全文：{len(got)}/{len(oa)} 篇"
+              f"{'（dry-run，未實際下載）' if args.oa_dry_run else ' 已抓進 _pdfs/'}")
+        by_src = {}
+        for o in got:
+            by_src[o["source"]] = by_src.get(o["source"], 0) + 1
+        if by_src:
+            print("  來源：" + "、".join(f"{k} {v} 篇" for k, v in sorted(by_src.items())))
+        for o in got:
+            print(f"  ✓ [{o['source']:9s}] {o['journal']:8s} {o['title'][:52]}")
+        # 只列「有找到網址卻抓失敗」的，沒 OA 的付費牆文章不用洗版
+        broken = [o for o in oa if not o["ok"] and o["source"]]
+        if broken:
+            print(f"  ⚠️  找到網址但抓失敗 {len(broken)} 篇：")
+            for o in broken:
+                print(f"     {o['journal']:8s} {o['doi']} — {o['reason']}")
 
     # --email：給 launchd 週日排程用，跑完寄一封摘要信（有抓到新內容才寄）
     if getattr(args, "email", False):
@@ -379,6 +411,10 @@ def main(argv: list[str] | None = None) -> int:
                          help="跑完發 macOS 通知（給 launchd 排程用）")
     p_fetch.add_argument("--email", action="store_true",
                          help="跑完寄摘要 email（需 config 的 email 區塊 + .env 的 SMTP_PASSWORD）")
+    p_fetch.add_argument("--download-oa", action="store_true",
+                         help="順手把拿得到的 OA 全文抓進 _pdfs/（隔天 organize 會入 KB）")
+    p_fetch.add_argument("--oa-dry-run", action="store_true",
+                         help="搭配 --download-oa：只列出會抓哪些，不實際下載")
     p_fetch.add_argument("--silent-when-empty", action="store_true",
                          help="搭配 --notify / --email：沒新內容時不通知、不寄信")
     p_fetch.set_defaults(func=cmd_fetch)

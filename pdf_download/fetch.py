@@ -24,8 +24,17 @@ def run_fetch(
     force: bool = False,
     analyzer: Optional[AbstractAnalyzer] = None,
     force_reanalyze: bool = False,
+    download_oa: bool = False,
+    oa_config: Optional[dict] = None,
+    oa_dry_run: bool = False,
+    kb_raw_dir: Optional[Path] = None,
+    naming_config: Optional[dict] = None,
 ) -> dict:
-    """跑 fetch，回傳 summary dict（給 CLI 顯示用）。"""
+    """跑 fetch，回傳 summary dict（給 CLI 顯示用）。
+
+    download_oa: 抓完摘要後，順手走 OA 索引階梯把拿得到的全文下載進 _pdfs/，
+                 隔天 03:00 organize 會自動改名入 KB。失敗不影響 fetch 主流程。
+    """
     now = datetime.now()
     fetch_date = now.strftime("%Y-%m-%d")
     fetched_at = now.strftime("%Y-%m-%d %H:%M")
@@ -101,10 +110,38 @@ def run_fetch(
             encoding="utf-8",
         )
 
+    # OA 全文自動下載（--download-oa）。抓進 _pdfs/ 後就交給 organize，
+    # 這裡不改名、不碰 KB。整段包 try：任何失敗都不能拖垮已經產好的摘要。
+    oa_results = []
+    if download_oa and issues:
+        try:
+            from pdf_download.oa_fetch import download_oa_fulltext
+            # 不用 is_open_access 當閘門：實測聯集(33) > PubMed 標 OA(24)，
+            # 多出的是作者手稿/典藏版。對全部有 DOI 的篇都走一次階梯。
+            candidates = [
+                {"doi": a.doi.strip().lower(), "pmid": a.pmid or "",
+                 "journal": i.journal_abbrev, "title": a.title,
+                 "article_type": a.article_type,
+                 "year": i.publication_date[:4] if i.publication_date else ""}
+                for i in issues for a in i.articles if a.doi
+            ]
+            oa_results = download_oa_fulltext(
+                candidates, pdfs_dir, oa_config or {}, dry_run=oa_dry_run,
+                kb_raw_dir=kb_raw_dir, naming_config=naming_config,
+            )
+        except Exception as e:
+            logger.error(f"OA 全文下載失敗（不影響摘要）：{e}", exc_info=True)
+
     state.save()
 
     return {
         "out_dir": out_dir,
+        "oa": [{
+            "doi": r.doi, "journal": r.journal, "title": r.title,
+            "source": r.source, "ok": r.ok,
+            "path": str(r.path) if r.path else "",
+            "reason": r.reason,
+        } for r in oa_results],
         "fetched": [{
             "journal": i.journal_abbrev,
             "publication_date": i.publication_date,

@@ -97,6 +97,16 @@ ai_analysis:
   cache_file: ~/.config/pdf-download/ai-cache.json
   max_tokens: 600                        # 每篇回應上限
 
+# OA 全文自動下載（fetch 加 --download-oa 才跑）
+# 走公開索引階梯：Semantic Scholar → PMC → Unpaywall，抓到的 PDF 丟 _pdfs/，
+# 隔天 03:00 organize 自動改名入 KB。實測涵蓋率約 46%（2026-07-10，72 篇樣本）。
+# 只走公開索引，無憑證/無反爬；抓不到的（NEJM/Lancet 為主）照舊手動。
+oa_download:
+  enabled: true
+  unpaywall_email: lybrish@gmail.com   # Unpaywall API 要求帶信箱（免費，只是識別）
+  timeout: 60                          # 單篇下載逾時（秒）
+  max_size_mb: 50                      # 單檔大小上限，超過就跳過
+
 # 每週摘要 email（fetch 加 --email 才寄；沒抓到新內容不寄）
 # 密碼「不」寫在這裡：放 .env 的 SMTP_PASSWORD（Gmail 要用「應用程式密碼」16 碼，因為開了兩步驗證）
 email:
