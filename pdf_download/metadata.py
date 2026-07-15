@@ -48,6 +48,50 @@ class ArticleMeta:
 # 標準 DOI 正則：10.<registrant>/<suffix>
 DOI_REGEX = re.compile(r"10\.\d{4,9}/[A-Za-z0-9.()_/-]+(?:[A-Za-z0-9])")
 
+# 預印本平台的 DOI 前綴。正式論文的 PDF 首頁常印著預印本浮水印（作者先投 medRxiv
+# 再正式發表），於是同一頁上有兩個 DOI。直接取「第一個」會抓到預印本那個，
+# 用錯誤身分歸檔——檔名/期刊/年份全錯，而且無聲無息。挑 DOI 時把這些往後排。
+_PREPRINT_PREFIXES = ("10.1101", "10.21203", "10.20944", "10.31234", "10.31219")
+
+# DOI 後面直接黏著英文字：PDF 抽文字時 DOI 跟下一個字之間常沒有空白，正則就一路
+# 吃過去（實測：`...223539Protected`、`...007061Copyright`、`...942doi`）。
+# 規則：數字後面緊接「大寫開頭的英文單字」或小寫 doi ＝黏上來的，砍掉。
+# 限定「數字後面」是為了避開 10.1056/NEJMoa2509761 這種字母在數字前的正常 DOI。
+_GLUED_TAIL = re.compile(r"(?<=\d)(?:[A-Z][a-z]{2,}|doi)\w*$")
+
+# PDF 抽字會在 DOI 中間塞進假空白。實測 ERJ 首頁長這樣：
+#   `(https://doi.org/10.1183/13993003.01570 -2025)`   ← 連字號前多一個空白
+# 正則吃不過空白 → 只抽到 `...01570`（少了 -2025）→ PubMed 查無此篇。
+# 只補「DOI 尾端數字 ＋ 空白 ＋ 連字號緊接四位年份」這一種形狀，且**連字號後面不准
+# 有空白**——這樣頁面上正常排版的 `10.1097/CCM.xxx - 2026 Lippincott` 不會被誤接成
+# DOI 的一部分。\s+ 同時涵蓋空白與換行兩種斷法。
+_DOI_YEAR_GAP = re.compile(r"(10\.\d{4,9}/[A-Za-z0-9.()_/-]*\d)\s+-(\d{4})(?![\d-])")
+
+
+def _clean_doi(raw: str) -> str:
+    """把正則多吃進來的尾巴清掉。"""
+    doi = raw.rstrip(".,;)")
+    doi = _GLUED_TAIL.sub("", doi)
+    return doi.rstrip(".,;)")
+
+
+def _pick_doi(text: str) -> Optional[str]:
+    """從一段文字挑出最可能是「這篇論文本身」的 DOI。
+
+    收集全部候選再挑，而不是取第一個：正式期刊的優先於預印本浮水印。
+    整頁只有預印本 DOI 時，那它就是本體，照用。
+    """
+    # 先補 DOI 中間的假空白（見 _DOI_YEAR_GAP）。放這層而非只放首頁那條，
+    # 是因為 PDF metadata 欄位一樣可能有這個問題，而且放這裡才測得到。
+    text = _DOI_YEAR_GAP.sub(r"\1-\2", text)
+    cands = [c for c in (_clean_doi(m.group(0)) for m in DOI_REGEX.finditer(text)) if c]
+    if not cands:
+        return None
+    for c in cands:
+        if not c.startswith(_PREPRINT_PREFIXES):
+            return c
+    return cands[0]
+
 
 # ---------- 從檔名抽 DOI（publisher-specific patterns） ----------
 
@@ -80,17 +124,31 @@ def _doi_from_springer_filename(stem: str) -> Optional[str]:
     return None
 
 
+def _doi_from_underscore_filename(stem: str) -> Optional[str]:
+    """出版商下載檔名把 DOI 的 `/` 換成 `_`（斜線不能當檔名）：
+    10.1097_ccm.0000000000007091 → 10.1097/ccm.0000000000007091
+
+    只在「前綴後面剛好一個底線」時還原。多個底線分不出哪個才是斜線
+    （10.1093_ajrccm_aamaf105 可能是 10.1093/ajrccm/aamaf105），而檔名這條
+    跑在首頁抽取之前，猜錯會回傳錯 DOI、反而害到本來靠首頁就能成功的檔案。
+    分不出來時寧可不猜，讓它往下走首頁那條。
+    """
+    m = re.match(r"^(10\.\d{4,9})_([^_]+)$", stem)
+    return f"{m.group(1)}/{m.group(2)}" if m else None
+
+
 def _doi_from_filename(name: str) -> Optional[str]:
     """嘗試各家 publisher 的檔名格式抽 DOI。回傳 None 表示沒中。"""
     stem = Path(name).stem
-    for fn in (_doi_from_nejm_filename, _doi_from_springer_filename):
+    for fn in (_doi_from_nejm_filename, _doi_from_springer_filename,
+               _doi_from_underscore_filename):
         doi = fn(stem)
         if doi:
             return doi
     # 通用：檔名直接出現 DOI 字串
     m = DOI_REGEX.search(stem)
     if m:
-        return m.group(0).rstrip(".,;)")
+        return _clean_doi(m.group(0))
     return None
 
 
@@ -109,9 +167,9 @@ def _doi_from_pdf_metadata(pdf: Path) -> Optional[str]:
         val = meta.get(key, "")
         if not val:
             continue
-        m = DOI_REGEX.search(str(val))
-        if m:
-            return m.group(0).rstrip(".,;)")
+        doi = _pick_doi(str(val))
+        if doi:
+            return doi
     return None
 
 
@@ -131,11 +189,7 @@ def _doi_from_pdf_first_page(pdf: Path, max_chars: int = 15000) -> Optional[str]
         logger.debug(f"讀 PDF 第一頁失敗 {pdf.name}: {e}")
         return None
 
-    text = text[:max_chars]
-    m = DOI_REGEX.search(text)
-    if m:
-        return m.group(0).rstrip(".,;)")
-    return None
+    return _pick_doi(text[:max_chars])
 
 
 def extract_doi(pdf: Path) -> Tuple[Optional[str], Optional[str]]:
