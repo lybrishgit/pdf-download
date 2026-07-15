@@ -225,18 +225,20 @@ def _download_pdf(sess: requests.Session, url: str, dest: Path,
 
 
 def _already_in_kb(c: dict, kb_raw_dir: Optional[Path], naming_config: dict) -> bool:
-    """這篇是否已經在 KB 裡（先前手動抓過）。
+    """這篇是否已經在 KB 裡（待消化的 00-Raw/ 或已消化的 00-Raw/_processed/）。
 
-    用 organize 同一套 build_pdf_filename 算出目標檔名再看存不存在——共用單一
-    真相，不自己複製一份命名規則。沒算出來就當作不在（寧可多抓，不可漏抓）。
+    用 organize 同一套 build_pdf_filename 算檔名、同一個 kb_has_file 查存在——
+    共用單一真相，不自己複製命名規則、也不自己判斷該查哪些目錄。
+    算不出來就當作不在（寧可多抓，不可漏抓）。
 
-    不做這個檢查的話：已在 KB 的篇會被重複下載，organize 判「目標檔已存在」
-    而不搬走，於是那些檔會永遠堆在 _pdfs/。
+    不做這個檢查的話：已在 KB 的篇會被重複下載 → organize 搬進 00-Raw →
+    daily 再消化一次 → KB 產出重複筆記。
     """
     if not kb_raw_dir:
         return False
     try:
         from pdf_download.naming import build_pdf_filename
+        from pdf_download.organize import kb_has_file
         name = build_pdf_filename(
             year=c.get("year") or "unknown",
             journal_abbrev=c.get("journal", ""),
@@ -245,7 +247,7 @@ def _already_in_kb(c: dict, kb_raw_dir: Optional[Path], naming_config: dict) -> 
             max_title_chars=naming_config.get("max_title_chars", 35),
             stopwords=naming_config.get("stopwords"),
         )
-        return (kb_raw_dir / name).exists()
+        return kb_has_file(kb_raw_dir, name)
     except Exception as e:
         logger.debug(f"  KB 去重檢查失敗（當作不在）：{e}")
         return False

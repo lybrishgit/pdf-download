@@ -34,6 +34,24 @@ from pdf_download.naming import build_pdf_filename
 
 logger = logging.getLogger(__name__)
 
+# KB digester 消化完會把原檔搬到 00-Raw/_processed/（保留原檔名）
+KB_PROCESSED_SUBDIR = "_processed"
+
+
+def kb_has_file(kb_raw_dir: Path, name: str) -> bool:
+    """這個檔名是否已經在 KB 裡（待消化的根目錄 或 已消化的 _processed/）。
+
+    **一定要查 _processed/**：KB 的 digester 消化完，會把原檔以「原檔名」搬去
+    `00-Raw/_processed/`，不留在根目錄。也就是說 `00-Raw/` 根目錄只是「一天內的
+    待消化暫存區」——只查它，去重的有效視窗只有 organize 03:00 → daily 04:00
+    那一小時，之前消化過的一律看不到。
+
+    2026-07-15 實測：_processed/ 有 756 篇對去重完全隱形，已造成 4 篇重複被排進
+    待消化佇列（KB 側 session 發現並先移到 _dupes/ 擋掉）。organize 的衝突檢查與
+    oa_fetch 的下載去重都走這個 helper，避免兩處邏輯漂移。
+    """
+    return (kb_raw_dir / name).exists() or (kb_raw_dir / KB_PROCESSED_SUBDIR / name).exists()
+
 
 @dataclass
 class OrganizeResult:
@@ -319,10 +337,13 @@ def organize_pdfs(
         )
         target = kb_raw_dir / new_name
 
-        # 衝突檢查
-        if target.exists():
+        # 衝突檢查：根目錄與 _processed/ 都要看（見 kb_has_file）。
+        # 只看根目錄的話，已消化過的篇會被再搬進 00-Raw → daily 再消化一次 →
+        # KB 產出重複筆記（筆記檔名有日期前綴、不會撞名，所以擋不住）。
+        if kb_has_file(kb_raw_dir, new_name):
             result.target = target
-            result.reason = f"目標檔已存在: {new_name}"
+            where = "00-Raw/" if target.exists() else f"{KB_PROCESSED_SUBDIR}/（已消化過）"
+            result.reason = f"目標檔已存在於 {where}: {new_name}"
             results.append(result)
             continue
 
