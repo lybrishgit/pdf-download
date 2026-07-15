@@ -149,6 +149,23 @@ pdf_download/
   - 處理原則：新規則只套用到之後的新資料，**舊檔不回頭翻新**（如要翻新需另寫一次性掃描）
   - 第 4 支獨立物種 `med-literature-organizer` skill 含查重 + 多格式，不參與本命名統一
 
+### ⚠️ 下游消費者：`/paper-review`、`/paper-digest` skill（2026-07-15 起）
+
+這兩個 skill（`skills/paper-review/config.yaml`）取全文時會**直接讀我們的產物**。
+動下列任何一項前先看一眼它的 config，否則會**無聲弄壞它**（它只會變成「找不到全文」，不會報錯指向我們）：
+
+| 我們的東西 | 它怎麼用 | 動了會怎樣 |
+|---|---|---|
+| `config.yaml` 的 `inbox_mirror_dir`（`~/lybrish_claude/inbox/_unclassified/`） | 它的 `fulltext.inbox_dir`，當本機全文來源 | 改路徑／關掉副本 → 它少一個來源 |
+| `organize` 產出的**檔名規則** | 它靠檔名在上面兩個夾找論文 | 改命名規則 → 它找不到舊檔 |
+| KB 的 `00-Raw/_processed/` | 它的 `fulltext.kb_archive_dir`（命中率最高的本機來源） | 這夾是 KB 的，我們只讀不寫（去重也靠它，見 `organize.kb_has_file`） |
+
+**留給我們的插槽**：它的 `fulltext.library_script` 目前留空；填了就會在找不到全文時呼叫外部腳本。
+`oa_fetch` 可以當這個 adapter，但**張醫師已決定延後**（本機那批命中率高、急迫性低）。要做再談，別擅自接。
+
+> 寫這節的原因：這條耦合原本只存在於 skill 那邊的 config 註解，pdf-download 這側零紀錄。
+> 2026-07-15 才因「跨系統邊界靠推論」吃過虧（去重漏看 `_processed/`），所以把它寫下來。
+
 ---
 
 ## 8a. 自動排程（launchd） + 一鍵 organize
