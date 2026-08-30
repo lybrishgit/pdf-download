@@ -185,15 +185,22 @@ def resolve_pdf_urls(sess: requests.Session, candidates: List[dict], email: str)
 # ---------- 下載 ----------
 
 def _safe_stem(journal: str, pmid: str, doi: str) -> str:
-    """組中性檔名，故意不讓它長得像 DOI。
+    """組檔名，並把「我們已知的 DOI」編進去。
 
-    naming._doi_from_filename 會先用 DOI 正則掃檔名；正則要求 `10.xxxx/` 這種
-    有斜線的形狀，而檔名不可能有斜線，所以這裡怎麼組都不會誤觸發。
-    用 PMID 當識別；沒有就用 DOI 去掉標點的尾段。
+    原本刻意組成「中性檔名」，想讓 organize 一律靠讀 PDF 首頁抽 DOI。**這是個
+    後見之明的錯**：有些下載回來的 OA PDF 首頁抽不到 DOI（作者手稿版、掃描版、
+    文字層怪），organize 三段抽取全落空 → 檔案卡在 _pdfs/ 永遠進不了 KB——而
+    我們下載時「本來就知道」它的 DOI，卻把它丟了。
+
+    改成把 DOI 編進檔名：`/` → `@`（檔案系統安全、DOI 不含 `@`、且因為沒有 `/`，
+    不會誤觸發 metadata.DOI_REGEX 那個要求斜線的通用正則）。organize 端新增
+    `_doi_from_oa_filename` 專門解碼這種檔名（見 metadata.py），優先於首頁抽取。
+    這樣 OA 檔一律用「當初下載用的權威 DOI」，比首頁抽取更可靠、也不會再卡。
     """
     j = re.sub(r"[^A-Za-z0-9]", "", journal) or "OA"
-    ident = pmid or re.sub(r"[^A-Za-z0-9]+", "-", doi)[-40:]
-    return f"OA_{j}_{ident}"
+    ident = pmid or "nopmid"
+    doi_enc = doi.replace("/", "@")
+    return f"OA_{j}_{ident}_{doi_enc}"
 
 
 def _download_pdf(sess: requests.Session, url: str, dest: Path,

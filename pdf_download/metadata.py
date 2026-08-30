@@ -137,11 +137,28 @@ def _doi_from_underscore_filename(stem: str) -> Optional[str]:
     return f"{m.group(1)}/{m.group(2)}" if m else None
 
 
+def _doi_from_oa_filename(stem: str) -> Optional[str]:
+    """解碼 oa_fetch 自動下載的檔名，取回它當初編進去的 DOI。
+
+    oa_fetch 命名為 `OA_<journal>_<pmid>_<doi>`，其中 DOI 的 `/` 編成 `@`
+    （見 oa_fetch._safe_stem）。這條讓 organize 直接用「當初下載用的權威 DOI」，
+    不必再賭 PDF 首頁抽得到——有些 OA PDF 首頁抽不到，會白白卡在 _pdfs/。
+
+    只認 `OA_` 開頭 + 尾段是 `10.xxxx@...` 的形狀，避免誤解其他檔名。
+    """
+    if not stem.startswith("OA_"):
+        return None
+    m = re.search(r"(10\.\d{4,9}@[A-Za-z0-9.()_@/-]+)$", stem)
+    if not m:
+        return None
+    return _clean_doi(m.group(1).replace("@", "/"))
+
+
 def _doi_from_filename(name: str) -> Optional[str]:
     """嘗試各家 publisher 的檔名格式抽 DOI。回傳 None 表示沒中。"""
     stem = Path(name).stem
-    for fn in (_doi_from_nejm_filename, _doi_from_springer_filename,
-               _doi_from_underscore_filename):
+    for fn in (_doi_from_oa_filename, _doi_from_nejm_filename,
+               _doi_from_springer_filename, _doi_from_underscore_filename):
         doi = fn(stem)
         if doi:
             return doi
