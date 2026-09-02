@@ -154,7 +154,7 @@ def slugify_title(
 #
 # ⚠️ 同步提醒：以下兩支獨立腳本各自保有一份「逐字相同」的副本，
 #    改這裡記得一起改：
-#      - projects/downloads-organizer/scripts/medical_rename.py
+#      - projects/organize-downloads/medical_rename.py
 #      - projects/pdf-rename-claude/rename_pdf.py
 TYPE_SUFFIX_MAP = [
     ("meta-analysis", "_MA"),
