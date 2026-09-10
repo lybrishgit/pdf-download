@@ -198,9 +198,13 @@ class PubMedFetcher:
             key=lambda k: (k[2], self._safe_int(k[0]), self._safe_int(k[1])),
             reverse=True,
         )
+        # 連續出版（BMJ）：一週就是一期，已結束的週不會再長（實測 PubMed 收錄延遲 0–1 天），
+        # 「≥3 篇」這個防索引延遲的門檻對它沒意義——BMJ 過濾後每週只有 1–5 篇，
+        # 套門檻會退回去挑「篇數最多的舊週」、把 state 倒退回去。所以取最新且 ≥1 篇的週。
+        min_articles = 1 if self.config.continuous else MIN_ARTICLES_FOR_COMPLETE_ISSUE
         latest_key = None
         for k in sorted_issues:
-            if len(articles_by_issue[k]) >= MIN_ARTICLES_FOR_COMPLETE_ISSUE:
+            if len(articles_by_issue[k]) >= min_articles:
                 latest_key = k
                 break
         if latest_key is None:

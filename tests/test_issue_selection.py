@@ -134,6 +134,15 @@ class ContinuousBmjTest(unittest.TestCase):
         self.assertEqual(issue.issue_id, f"bmj:vol394:iss:{y}-W{w:02d}")
         self.assertEqual(issue.issue, "")                             # 期號欄位維持空白，版面不變
 
+    def test_latest_week_wins_even_with_one_article(self):
+        # BMJ 過濾後每週常只有 1–2 篇：最新已結束的週只有 1 篇，也要贏過 5 篇的舊週
+        lm = self.last_monday
+        rows = [("394", "", lm.isoformat(), "epublish")]
+        rows += [("394", "", (lm - timedelta(days=7)).isoformat(), "epublish")] * 5
+        issue = _fetcher_with("bmj", rows).fetch_current_issue()
+        self.assertEqual(issue.publication_date, lm.isoformat())
+        self.assertEqual(len(issue.articles), 1)
+
     def test_two_weeks_have_different_ids(self):
         f = PubMedFetcher(JOURNALS["bmj"])
         a = f._make_issue("394", "", "2026-08-31", [])
