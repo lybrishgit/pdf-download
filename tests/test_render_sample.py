@@ -106,7 +106,7 @@ def main():
     fetch_date = datetime.now().strftime("%Y-%m-%d")
 
     renderer = Renderer()
-    md, html = renderer.render_issue(issue, fetched_at, out_dir)
+    md, html, _json = renderer.render_issue(issue, fetched_at, out_dir)
     idx_md, idx_html = renderer.render_index([issue], fetched_at, fetch_date, out_dir)
 
     print(f"\n📁 樣本輸出於：{out_dir}\n")

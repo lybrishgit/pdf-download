@@ -44,6 +44,9 @@ class State:
     def last_issue_id(self, slug: str) -> Optional[str]:
         return self.data["journals"].get(slug, {}).get("last_issue_id")
 
+    def last_publication_date(self, slug: str) -> Optional[str]:
+        return self.data["journals"].get(slug, {}).get("last_publication_date")
+
     def is_already_fetched(self, slug: str, issue_id: str) -> bool:
         return self.last_issue_id(slug) == issue_id
 

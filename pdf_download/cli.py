@@ -82,12 +82,22 @@ def build_analyzer(config: dict) -> AbstractAnalyzer | None:
 def cmd_fetch(args: argparse.Namespace) -> int:
     config = load_config(args.config)
 
+    # --issue slug=selector（可重複）：補抓指定的期，不看 state
+    selectors = []
+    for spec in args.issue or []:
+        slug, _, sel = spec.partition("=")
+        if not sel or slug not in JOURNALS:
+            sys.exit(f"❌ --issue 格式是 <期刊代號>=<卷/期 或 ISO週>，例如 chest=170/2、bmj=2026-W28（收到：{spec!r}）")
+        selectors.append((slug, sel.strip()))
+
     if args.journals:
         slugs = args.journals
+    elif selectors:
+        slugs = []          # 只補指定的期，不順便抓所有期刊的最新一期
     else:
         slugs = config.get("journals_enabled", [])
 
-    if not slugs:
+    if not slugs and not selectors:
         sys.exit("❌ 沒有指定任何期刊（config 內 journals_enabled 是空的，也沒有傳參數）")
 
     inbox_root = expand(config["inbox_root"])
@@ -104,7 +114,10 @@ def cmd_fetch(args: argparse.Namespace) -> int:
     else:
         print("ℹ️  --no-analyze：跳過 AI 評析")
 
-    print(f"📥 抓取期刊：{', '.join(slugs)}")
+    if slugs:
+        print(f"📥 抓取期刊：{', '.join(slugs)}")
+    if selectors:
+        print(f"📥 補抓指定期：{', '.join(f'{s}={sel}' for s, sel in selectors)}")
     print(f"📁 輸出位置：{inbox_root}")
     if analyzer:
         print(f"🤖 AI 評析：{analyzer.model} (cache: {analyzer.cache.path})")
@@ -131,6 +144,7 @@ def cmd_fetch(args: argparse.Namespace) -> int:
         # 給 OA 去重用：算得出 KB 目標檔名才知道這篇是不是已經有了
         kb_raw_dir=expand(config["kb_raw_dir"]),
         naming_config=config.get("naming", {}),
+        issue_selectors=selectors,
     )
 
     print(f"\n✅ 完成！輸出資料夾：{summary['out_dir']}\n")
@@ -139,6 +153,7 @@ def cmd_fetch(args: argparse.Namespace) -> int:
         print("成功抓取：")
         for f in summary["fetched"]:
             print(f"  • {f['journal']:12s} {f['publication_date']:12s} "
+                  f"{f.get('issue_label', ''):10s} "
                   f"{f['article_count']} 篇 ({f['oa_count']} OA)")
 
     if summary["skipped"]:
@@ -401,6 +416,9 @@ def main(argv: list[str] | None = None) -> int:
 
     p_fetch = sub.add_parser("fetch", help="抓 TOC 並產生摘要 .md / .html")
     p_fetch.add_argument("journals", nargs="*", help="期刊代號（不傳則用 config 預設）")
+    p_fetch.add_argument("--issue", action="append", metavar="SLUG=SELECTOR",
+                         help="補抓指定的期，可重複。一般期刊用 卷/期（chest=170/2），"
+                              "連續出版的 BMJ 用 ISO 週（bmj=2026-W28）。不看 state、一律抓。")
     p_fetch.add_argument("--force", action="store_true",
                          help="略過 state 檢查，重抓最新一期")
     p_fetch.add_argument("--no-analyze", action="store_true",

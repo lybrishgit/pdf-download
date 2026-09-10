@@ -74,6 +74,9 @@ python -m pdf_download.cli fetch nejm
 # 強制重抓（即使這期已抓過）
 python -m pdf_download.cli fetch --force
 
+# 補抓指定的期（漏掉的、或想回頭看的；BMJ 用 ISO 週）
+python -m pdf_download.cli fetch --issue chest=170/2 --issue bmj=2026-W28
+
 # 跳過 AI 評析（只抓 abstract，不叫 Claude API）
 python -m pdf_download.cli fetch --no-analyze
 

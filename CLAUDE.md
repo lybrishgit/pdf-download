@@ -91,12 +91,27 @@ pdf_download/
 2) efetch by PMIDs (chunks of 200) → XML
 3) 解析 XML → Article 物件
 4) 按 (publication_date, volume, issue) 分群
+   - **線上先行（PublicationStatus=aheadofprint）不入群**：它們卷期皆空，
+     會被誤當「一期」；同一天上線 3–4 篇就贏過真正那期，而且 issue_id 全撞成
+     `ccm:vol:iss`，state 記過一次就永遠「已抓過」。2026-09-10 查到 6 本期刊
+     （Chest/BMJ/CCM/ERJ/AnnIM/JAMA）因此靜默停擺數週到數月、排程照樣回報成功。
+     先行文章等排進期後自然出現在那期；每日新文章由 pubmed-digest 那條線負責。
+   - **BMJ 是連續出版**（`continuous=True`）：PubMed 永遠只給卷、沒有期號，
+     改按 ISO 週當一期（issue_id 如 `bmj:vol394:iss:2026-W36`），進行中的本週不抓。
+   - 沒期號但已排期的罕見情況（增刊）：issue_id 補上出刊日，不會撞。
 5) 挑「最值得看的」一期：
    - 優先：最新且文章數 >= 3 的（避開 PubMed 索引中的當週新期）
    - 退而求其次：所有期裡文章最多的
    - 為什麼這樣設計：PubMed 對最新期常只索引到 1-2 篇，
      直接挑「最新」會讓使用者看到不完整的內容。
+6) 補漏：`fetch --issue chest=170/2`（BMJ 用 `bmj=2026-W28`）直接用 [Volume]/[Issue]
+   查、不看時間窗、不看 state；補舊期不會把 state 倒退。
+   為什麼要有它：esearch 上限 200 筆，先行文章多的期刊（Chest 120 天內 60+ 篇）
+   會把較舊的真期擠出時間窗，靠時間窗補不到。
 ```
+
+驗證抓取邏輯的方式：`PYTHONPATH=. python tests/test_issue_selection.py`（假 XML、不打網路），
+再對真 PubMed 跑一次唯讀探測看 11 本各挑到哪一期、幾篇——**量最終挑中的那期，不量中間步驟**。
 
 ---
 
@@ -260,12 +275,23 @@ python -m pdf_download.cli fetch nejm
 # 強制重抓（已抓過的也重跑）
 python -m pdf_download.cli fetch --force
 
+# 補抓指定的期（不看 state；BMJ 用 ISO 週）
+python -m pdf_download.cli fetch --issue chest=170/2 --issue bmj=2026-W28
+
+# 測試（不打網路）
+PYTHONPATH=. python tests/test_issue_selection.py
+PYTHONPATH=. python tests/test_render_sample.py
+
 # debug mode
 python -m pdf_download.cli -v fetch nejm
 
 # 看支援的期刊
 python -m pdf_download.cli list-journals
 ```
+
+⚠️ **在 git worktree 裡跑 fetch 前，先 `ln -s <主 checkout>/.env .env`**。`.env` 不進 git，
+worktree 沒有它時 AI 評析會**靜默關閉**（只在 stdout 印一行警告，log 裡看不到），
+抓出來的是沒評析的版本。2026-09-10 補漏第一次就這樣跑了 20 秒才發現。
 
 ### 申請 NCBI API Key（可選）
 

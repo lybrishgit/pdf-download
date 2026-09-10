@@ -42,6 +42,9 @@ class JournalConfig:
     pdf_url: str             # 含 {doi} 佔位符
     article_url: str         # 含 {doi} 佔位符
     cadence: str             # weekly / biweekly / monthly
+    # 連續出版（BMJ）：PubMed 永遠只給卷、沒有期號，文章逐日上線。
+    # 這類期刊改按「ISO 週」當一期，否則所有文章的 issue_id 都一樣、永遠被判已抓過。
+    continuous: bool = False
 
 
 # 共用 URL pattern：doi.org 是最穩的選擇
@@ -84,6 +87,7 @@ JOURNALS = {
         pdf_url=DOI_URL,
         article_url=DOI_URL,
         cadence="weekly",
+        continuous=True,
     ),
     "annim": JournalConfig(
         slug="annim",

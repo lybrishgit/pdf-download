@@ -5,6 +5,9 @@
 2. efetch by PMIDs → XML metadata
 3. 解析 XML → Article 物件
 4. 按 Volume+Issue 分群，取最新一期
+   - 線上先行（PublicationStatus=aheadofprint，尚未排進任何一期、卷期皆空）不參與
+     選期：它們等排進期後自然出現在那期；每日新文章由 pubmed-digest 那條線負責。
+   - 連續出版（BMJ）沒有期號，按 ISO 週當一期。
 
 API 文件：
 - https://www.ncbi.nlm.nih.gov/books/NBK25501/
@@ -24,7 +27,7 @@ import re
 import time
 import urllib.parse
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 from xml.etree import ElementTree as ET
 
@@ -173,8 +176,18 @@ class PubMedFetcher:
             )
 
         articles_by_issue = self._fetch_and_group(pmids)
+        if self.config.continuous:
+            # 本週還在進行中（週日 16:00 跑時，今天就屬於本週），先不抓：
+            # 一旦記進 state，本週後半才上線的文章就永遠補不到。
+            this_monday = self._week_monday(datetime.now().strftime("%Y-%m-%d"))
+            articles_by_issue = {
+                k: v for k, v in articles_by_issue.items() if k[2] < this_monday
+            }
         if not articles_by_issue:
-            raise RuntimeError(f"{self.config.abbrev} 抓到 PMID 但解析後無文章")
+            raise RuntimeError(
+                f"{self.config.abbrev} 抓到 PMID 但沒有任何已排期的文章"
+                "（可能全是線上先行，或整批被過濾掉）"
+            )
 
         # 選「目前最值得看」的那一期：
         # - 優先：最新且文章數 >= 門檻的那期（避免抓到 PubMed 還在索引中的當週新期）
@@ -196,20 +209,84 @@ class PubMedFetcher:
                              key=lambda k: len(articles_by_issue[k]))
 
         volume, issue, pub_date = latest_key
-        articles = articles_by_issue[latest_key]
+        return self._make_issue(volume, issue, pub_date, articles_by_issue[latest_key])
 
+    def fetch_issue(self, selector: str) -> IssueInfo:
+        """抓「指定的一期」（補漏用）：不看時間窗、不看 state。
+
+        selector 格式：
+        - 一般期刊："170/2"＝卷 170 期 2
+        - 連續出版（BMJ）："2026-W28"＝ISO 週
+
+        直接用 [Volume]/[Issue] 或該週的 [PDAT] 查 PubMed，避開 esearch 上限 200 筆
+        的問題（線上先行多的期刊，較舊的真期會被擠出時間窗）。
+        """
+        if self.config.continuous:
+            m = re.fullmatch(r"(\d{4})-W(\d{1,2})", selector)
+            if not m:
+                raise ValueError(f"{self.config.abbrev} 是連續出版，selector 要用 ISO 週，如 2026-W28")
+            monday = date.fromisocalendar(int(m.group(1)), int(m.group(2)), 1)
+            sunday = monday + timedelta(days=6)
+            term = (
+                f'"{self.config.iso_abbrev}"[Journal] AND '
+                f'("{monday:%Y/%m/%d}"[PDAT] : "{sunday:%Y/%m/%d}"[PDAT])'
+            )
+            wanted = monday.isoformat()
+            matches = lambda k: k[2] == wanted  # noqa: E731
+        else:
+            m = re.fullmatch(r"\s*([\w-]+)\s*/\s*([\w-]+)\s*", selector)
+            if not m:
+                raise ValueError(f"selector 要用「卷/期」格式，如 170/2（收到：{selector!r}）")
+            vol, iss = m.group(1), m.group(2)
+            term = f'"{self.config.iso_abbrev}"[Journal] AND {vol}[Volume] AND {iss}[Issue]'
+            matches = lambda k: k[0] == vol and k[1] == iss  # noqa: E731
+
+        pmids = self._esearch(term)
+        groups = self._fetch_and_group(pmids)
+        keys = [k for k in groups if matches(k)]
+        if not keys:
+            raise RuntimeError(
+                f"{self.config.abbrev} 找不到 {selector}"
+                "（PubMed 沒有這一期，或整期都被文章類型過濾掉）"
+            )
+        # 同一期偶爾會因 PubDate 不一致被拆成幾堆，合併起來、出刊日取最早
+        articles = [a for k in sorted(keys) for a in groups[k]]
+        pub_date = min(k[2] for k in keys)
+        return self._make_issue(keys[0][0], keys[0][1], pub_date, articles)
+
+    def _make_issue(self, volume: str, issue: str, pub_date: str,
+                    articles: List[Article]) -> IssueInfo:
+        volume = volume or ""
+        issue = issue or ""
+        if self.config.continuous:
+            y, w, _ = date.fromisoformat(pub_date).isocalendar()
+            bucket = f"{y}-W{w:02d}"
+        elif not issue:
+            bucket = pub_date
+        else:
+            bucket = ""
         return IssueInfo(
             journal_slug=self.config.slug,
             journal_full=self.config.full_name,
             journal_abbrev=self.config.abbrev,
-            volume=volume or "",
-            issue=issue or "",
+            volume=volume,
+            issue=issue,
             publication_date=pub_date,
             issue_url=f"https://pubmed.ncbi.nlm.nih.gov/?term="
                       f"{urllib.parse.quote(self.config.iso_abbrev)}%5BJournal%5D"
                       f"+AND+{volume}%5BVolume%5D+AND+{issue}%5BIssue%5D",
             articles=articles,
+            bucket=bucket,
         )
+
+    @staticmethod
+    def _week_monday(pub_date: str) -> str:
+        """YYYY-MM-DD → 該 ISO 週的星期一（同格式）。日期不合法就原樣回傳。"""
+        try:
+            d = date.fromisoformat(pub_date)
+        except ValueError:
+            return pub_date
+        return (d - timedelta(days=d.weekday())).isoformat()
 
     # ---------- esearch ----------
 
@@ -227,7 +304,11 @@ class PubMedFetcher:
             f'"{self.config.iso_abbrev}"[Journal] AND '
             f'("{start_s}"[PDAT] : "{end_s}"[PDAT])'
         )
+        ids = self._esearch(term)
+        logger.info(f"{self.config.abbrev}: 找到 {len(ids)} 個 PMID 在過去 {days} 天")
+        return ids
 
+    def _esearch(self, term: str) -> List[str]:
         params = {
             "db": "pubmed",
             "term": term,
@@ -242,20 +323,23 @@ class PubMedFetcher:
         logger.debug(f"esearch: {term}")
         resp = self._get(url, params=params)
         data = resp.json()
-        ids = data.get("esearchresult", {}).get("idlist", [])
-        logger.info(f"{self.config.abbrev}: 找到 {len(ids)} 個 PMID 在過去 {days} 天")
-        return ids
+        return data.get("esearchresult", {}).get("idlist", [])
 
     # ---------- efetch ----------
 
     def _fetch_and_group(self, pmids: List[str]) -> Dict[Tuple[str, str, str], List[Article]]:
-        """efetch 全部 PMID，解析後按 (Vol, Iss, PubDate) 分群。"""
+        """efetch 全部 PMID，解析後按 (Vol, Iss, PubDate) 分群。
+
+        線上先行（aheadofprint）不入群：它們卷期皆空，會被誤當成「一期」，
+        同一天上線 3–4 篇就贏過真正那期，而且 issue_id 全撞。
+        連續出版（BMJ）改按 ISO 週入群：PubDate 折成該週星期一、期號留空。
+        """
         if not pmids:
             return {}
 
         # PubMed 建議每次 efetch ≤200 個 ID
         articles: List[Article] = []
-        publish_dates: Dict[str, str] = {}  # PMID → date
+        n_aop = 0
 
         for chunk_start in range(0, len(pmids), 200):
             chunk = pmids[chunk_start:chunk_start + 200]
@@ -274,10 +358,19 @@ class PubMedFetcher:
             root = ET.fromstring(resp.content)
 
             for art_elem in root.findall(".//PubmedArticle"):
-                article, vol, iss, pub_date = self._parse_article(art_elem)
+                article, vol, iss, pub_date, status = self._parse_article(art_elem)
                 if article is None:
                     continue
+                if status == "aheadofprint":
+                    n_aop += 1
+                    continue
+                if self.config.continuous:
+                    iss = ""
+                    pub_date = self._week_monday(pub_date)
                 articles.append((vol, iss, pub_date, article))
+
+        if n_aop:
+            logger.info(f"{self.config.abbrev}: 略過 {n_aop} 篇線上先行（尚未排期，等進期再收）")
 
         # 分群
         grouped: Dict[Tuple[str, str, str], List[Article]] = defaultdict(list)
@@ -311,8 +404,13 @@ class PubMedFetcher:
 
     # ---------- XML 解析 ----------
 
-    def _parse_article(self, art_elem) -> Tuple[Optional[Article], str, str, str]:
-        """從 <PubmedArticle> 元素抽出資料。回傳 (Article, volume, issue, pub_date)。"""
+    def _parse_article(self, art_elem) -> Tuple[Optional[Article], str, str, str, str]:
+        """從 <PubmedArticle> 元素抽出資料。
+
+        回傳 (Article, volume, issue, pub_date, status)；
+        status＝PubMed 的 PublicationStatus（ppublish / epublish / aheadofprint）。
+        """
+        status = (art_elem.findtext(".//PubmedData/PublicationStatus") or "").strip()
         # PMID
         pmid_el = art_elem.find(".//PMID")
         pmid = pmid_el.text if pmid_el is not None else ""
@@ -321,7 +419,7 @@ class PubMedFetcher:
         title_el = art_elem.find(".//ArticleTitle")
         title = self._clean_text(title_el) if title_el is not None else ""
         if not title:
-            return None, "", "", ""
+            return None, "", "", "", status
         title = title.rstrip(".").rstrip()
 
         # Volume / Issue
@@ -347,7 +445,7 @@ class PubMedFetcher:
                 pii = value
 
         if not doi:
-            return None, "", "", ""  # 沒 DOI 沒辦法構 PDF URL，跳過
+            return None, "", "", "", status  # 沒 DOI 沒辦法構 PDF URL，跳過
 
         # Authors
         authors = self._format_authors(art_elem)
@@ -358,7 +456,7 @@ class PubMedFetcher:
         # 抽 abstract（filter 邏輯需要知道有無）
         abstract_sections = self._extract_abstract_sections(art_elem)
         if not should_include_article(all_pub_types, doi, has_abstract=bool(abstract_sections)):
-            return None, "", "", ""
+            return None, "", "", "", status
 
         # Pages
         pages_el = art_elem.find(".//Pagination/MedlinePgn")
@@ -402,7 +500,7 @@ class PubMedFetcher:
             is_open_access=is_oa,
             pmid=pmid,
         )
-        return article, volume, issue, pub_date
+        return article, volume, issue, pub_date, status
 
     def _extract_pub_date(self, art_elem) -> str:
         """從 JournalIssue/PubDate 抽出 YYYY-MM-DD 格式。"""

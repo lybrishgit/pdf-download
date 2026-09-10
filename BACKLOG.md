@@ -130,7 +130,8 @@
 
 ### 補 tests/
 
-**現況**：只有 1 個 134 行的 render 測試。
+**現況**：render 測試 1 支 + 選期邏輯測試 1 支（`test_issue_selection.py`，12 項，2026-09-10 加，
+假 XML 不打網路）。organize 那側仍零覆蓋。
 
 **待覆蓋**
 - `extract_doi` 三段 fallback（filename / metadata / first_page）
@@ -140,6 +141,21 @@
 - `_resolve_conflict` `_dup` 後綴邏輯
 
 **為什麼低**：5/13 三條 backlog 都靠 smoke test 驗，沒踩到 regression。不痛但不踏實。
+
+---
+
+### esearch 上限 200 筆會擠掉較舊的真期（2026-09-10 發現）
+
+**現象**：`_search_recent_pmids` 用 `retmax=200`，先行文章多的期刊（Chest 120 天內先行 60+ 篇、
+BMJ 每週上百筆 news/editorial）會把時間窗前段的真期擠掉。實例：Chest vol170 iss1 在時間窗裡
+只看到 3 篇，用 `--issue chest=170/1` 直接查是 25 篇。
+
+**為什麼低**：週日排程只要「最新一期」，最新的一定在最前面，不受影響；補漏走 `--issue`。
+真要修就是 `retmax` 拉到 400–500（efetch 本來就分 200 一批），成本只是多一次 efetch。
+
+**觀察中（BMJ）**：新邏輯按 ISO 週當一期，但 9/10 實測近幾週過濾後只剩 1–2 篇、W34 才 5 篇，
+低於「≥3 篇」門檻會退而挑「文章最多的一週」。看補漏 W28–W36 各週篇數再決定：
+若各週穩定 ≥3 就沒事；若普遍 <3，BMJ 門檻要降或改週+雙週合併。
 
 ---
 

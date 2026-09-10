@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from pdf_download.analyzer import AbstractAnalyzer, load_prompt_template
 from pdf_download.journals import JOURNALS, get_fetcher
@@ -29,11 +29,15 @@ def run_fetch(
     oa_dry_run: bool = False,
     kb_raw_dir: Optional[Path] = None,
     naming_config: Optional[dict] = None,
+    issue_selectors: Optional[List[Tuple[str, str]]] = None,
 ) -> dict:
     """跑 fetch，回傳 summary dict（給 CLI 顯示用）。
 
     download_oa: 抓完摘要後，順手走 OA 索引階梯把拿得到的全文下載進 _pdfs/，
                  隔天 03:00 organize 會自動改名入 KB。失敗不影響 fetch 主流程。
+    issue_selectors: [(slug, "170/2"), (slug, "2026-W28"), ...] 指定要補抓的期（補漏用）。
+                 指定的期一律抓、不看 state；抓完只在「比 state 記的更新」時才更新 state，
+                 補舊期不會把 state 倒退回去害下週重抓。
     """
     now = datetime.now()
     fetch_date = now.strftime("%Y-%m-%d")
@@ -46,21 +50,25 @@ def run_fetch(
     failed: List[dict] = []
     skipped: List[dict] = []
 
-    for slug in journal_slugs:
+    targets: List[Tuple[str, Optional[str]]] = [(s, None) for s in journal_slugs]
+    targets += list(issue_selectors or [])
+
+    for slug, selector in targets:
         if slug not in JOURNALS:
             failed.append({"journal": slug, "reason": f"未知的期刊代號"})
             continue
 
         try:
-            logger.info(f"=== Fetching {slug} ===")
+            logger.info(f"=== Fetching {slug}{' ' + selector if selector else ''} ===")
             fetcher = get_fetcher(slug, http_config=http_config)
-            issue = fetcher.fetch_current_issue()
+            issue = (fetcher.fetch_issue(selector) if selector
+                     else fetcher.fetch_current_issue())
         except Exception as e:
             logger.error(f"Failed to fetch {slug}: {e}", exc_info=True)
             failed.append({"journal": slug, "reason": str(e)})
             continue
 
-        if not force and state.is_already_fetched(slug, issue.issue_id):
+        if selector is None and not force and state.is_already_fetched(slug, issue.issue_id):
             logger.info(f"{slug} 已抓過 {issue.issue_id}，跳過。")
             skipped.append({
                 "journal": slug,
@@ -91,7 +99,11 @@ def run_fetch(
 
         issues.append(issue)
         rendered_html[issue.issue_id] = html_path
-        state.record_fetch(slug, issue.issue_id, issue.publication_date)
+        last_date = state.last_publication_date(slug) or ""
+        if selector is None or issue.publication_date >= last_date:
+            state.record_fetch(slug, issue.issue_id, issue.publication_date)
+        else:
+            logger.info(f"{slug} 補的是舊期（{issue.publication_date} < {last_date}），state 不倒退")
 
     if issues:
         renderer = Renderer()
@@ -145,6 +157,8 @@ def run_fetch(
         "fetched": [{
             "journal": i.journal_abbrev,
             "publication_date": i.publication_date,
+            "issue_label": (f"{i.volume}/{i.issue}" if i.issue
+                            else (i.bucket or i.volume or "")),
             "article_count": len(i.articles),
             "oa_count": i.oa_count,
             # 評析頁 .html 路徑（email 當附件帶上，點開就是完整評析版面）

@@ -63,11 +63,18 @@ class IssueInfo:
     publication_date: str   # "2026-04-30"
     issue_url: str          # TOC 網址
     articles: List[Article] = field(default_factory=list)
+    # 期號空白時的識別碼補位：連續出版（BMJ）用 ISO 週 "2026-W36"，其他用出刊日。
+    # 不補位的話，所有沒期號的堆都會變成同一個 issue_id（如 "ccm:vol:iss"），
+    # state 記過一次就永遠「已抓過」——2026-09-10 查到 5 本期刊因此停擺數週到數月。
+    bucket: str = ""
 
     @property
     def issue_id(self) -> str:
         """用於 state file 比對是否已抓過。"""
-        return f"{self.journal_slug}:vol{self.volume}:iss{self.issue}"
+        base = f"{self.journal_slug}:vol{self.volume}:iss{self.issue}"
+        if not self.issue and self.bucket:
+            base += f":{self.bucket}"
+        return base
 
     @property
     def filename_stem(self) -> str:
