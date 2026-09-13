@@ -215,6 +215,14 @@ PDF-Organize.command 是**互動式雙擊**用（Terminal 開出來看輸出，
 PDF-Organize.command 安裝在 `~/Applications/PDF-Organize.command`，
 可拖到 Dock 右側做一鍵啟動。
 
+**自訂圖示**（2026-09-13）：`~/Applications/` 與 `scripts/` 兩份都貼了 SF Symbol
+`tray.and.arrow.down.fill`（深綠底 #2F7D5B）。圖示存在 FinderInfo + ResourceFork 擴充屬性，
+腳本內容不變、git 看不到。要換：
+```bash
+swift scripts/set_command_icon.swift render <符號名> /tmp/icon.png [#RRGGBB]
+swift scripts/set_command_icon.swift apply /tmp/icon.png ~/Applications/PDF-Organize.command scripts/PDF-Organize.command
+```
+
 排程觸發後會：
 1. 直接呼叫 venv python，跑 `pdf_download.cli {fetch,organize}`
 2. stdout/stderr 寫到 `~/Library/Logs/pdf-download/{fetch,organize}-auto-*.log`
